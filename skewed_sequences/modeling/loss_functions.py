@@ -15,11 +15,11 @@ class SGTLoss(nn.Module):
     """
     def __init__(self, p: float = 2.0, q: float = 2.0, lambda_: float = 0.0, sigma: float = 1.0) -> None:
         super().__init__()
+        self.eps = 1e-6
         self.p = p
         self.q = q
         self.lambda_ = lambda_
         self.sigma = max(sigma, 1e-6)  # Clamp for numerical stability
-        self.eps = 1e-6
 
     @staticmethod
     def beta_function(a: float, b: float) -> float:

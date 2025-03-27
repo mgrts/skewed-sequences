@@ -108,24 +108,69 @@ class LSTM(nn.Module):
         self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True)
         self.fc = nn.Linear(hidden_dim, output_dim)
 
-    def forward(self, x: Tensor, output_sequence_length: int = 60) -> Tensor:
-        B = x.size(0)
-        device = x.device
+    def forward(self, src: Tensor, tgt: Tensor) -> Tensor:
+        """
+        Autoregressive LSTM decoder, mimicking Transformer-style causal decoding.
 
+        Args:
+            src: (B, src_len, input_dim)
+            tgt: (B, tgt_len, output_dim) — target sequence used for step-by-step decoding (teacher forcing)
+
+        Returns:
+            Tensor: (B, tgt_len, output_dim)
+        """
+        B, tgt_len, _ = tgt.size()
+        device = src.device
+
+        # Encode the src sequence
         h0 = torch.zeros(self.lstm.num_layers, B, self.lstm.hidden_size, device=device)
         c0 = torch.zeros_like(h0)
+        _, (h, c) = self.lstm(src, (h0, c0))  # Only get final hidden and cell states
 
-        out, _ = self.lstm(x, (h0, c0))
-        out = self.fc(out)
+        # Initialize input to decoder as the first token of the target (e.g., zeros or a GO token)
+        outputs = []
+        input_t = tgt[:, 0].unsqueeze(1)  # (B, 1, input_dim)
 
-        return out[:, -output_sequence_length:, :]
+        for t in range(tgt_len):
+            out, (h, c) = self.lstm(input_t, (h, c))  # Step input
+            pred = self.fc(out)  # (B, 1, output_dim)
+            outputs.append(pred)
 
-    def infer(self, src: Tensor, sequence_length: int) -> Tensor:
+            # Use teacher forcing — next input is ground truth
+            if t + 1 < tgt_len:
+                input_t = tgt[:, t + 1].unsqueeze(1)
+
+        return torch.cat(outputs, dim=1)  # (B, tgt_len, output_dim)
+
+    def infer(self, src: Tensor, tgt_len: int) -> Tensor:
+        """
+        Autoregressive inference: predict `sequence_length` steps into the future
+        based on the source sequence.
+
+        Args:
+            src: Tensor of shape (B, src_len, input_dim)
+            sequence_length: number of future steps to predict
+
+        Returns:
+            Tensor of shape (B, sequence_length, output_dim)
+        """
+        B = src.size(0)
+        device = src.device
+
+        # Encode the source sequence to get the initial hidden and cell states
+        h0 = torch.zeros(self.lstm.num_layers, B, self.lstm.hidden_size, device=device)
+        c0 = torch.zeros_like(h0)
+        _, (h, c) = self.lstm(src, (h0, c0))
+
+        # Use the last time step from src as the first decoder input
+        input_t = src[:, -1:].detach()  # (B, 1, input_dim)
+
         outputs = []
 
-        for _ in range(sequence_length):
-            next_token = self.forward(src, output_sequence_length=1)
-            outputs.append(next_token)
-            src = torch.cat([src[:, 1:], next_token], dim=1)
+        for _ in range(tgt_len):
+            out, (h, c) = self.lstm(input_t, (h, c))
+            pred = self.fc(out)  # (B, 1, output_dim)
+            outputs.append(pred)
+            input_t = pred  # use model prediction as next input
 
-        return torch.cat(outputs, dim=1)
+        return torch.cat(outputs, dim=1)  # (B, sequence_length, output_dim)

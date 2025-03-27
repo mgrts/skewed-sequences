@@ -2,7 +2,8 @@ from pathlib import Path
 import numpy as np
 import typer
 from loguru import logger
-from scipy.special import beta as beta_func
+from scipy.special import beta
+from scipy.stats import uniform
 
 from skewed_sequences.config import SEED, SEQUENCE_LENGTH, PROCESSED_DATA_DIR
 
@@ -62,45 +63,42 @@ def smooth_sequence(sequence, smoothing_type, kernel_size, sigma, period):
     return smoothed.reshape(-1)
 
 
-def sgt_pdf(x, mu, sigma, lambda_, p, q):
-    B1 = beta_func(1 / p, q)
-    B2 = beta_func(2 / p, q - 1 / p)
-    B3 = beta_func(3 / p, q - 2 / p)
+class SkewedGeneralizedT:
+    def __init__(self, mu=0.0, sigma=1.0, lam=0.0, p=2.0, q=2.0):
+        assert -1 < lam < 1, "Lambda (lam) must be in (-1, 1)"
+        assert sigma > 0, "Sigma must be positive"
+        assert p > 0 and q > 0, "Shape parameters p and q must be positive"
 
-    expr = (1 + 3 * lambda_**2) * (B3 / B1) - 4 * lambda_**2 * (B2**2) / (B1**2)
-    if expr <= 1e-8:
-        raise ValueError(f'Invalid parameters: sqrt(expr) ≤ 0 (expr = {expr:.6f})')
+        self.mu = mu
+        self.sigma = sigma
+        self.lam = lam
+        self.p = p
+        self.q = q
 
-    v = q**(-1 / p) / np.sqrt(expr)
-    m = 2 * lambda_ * v * sigma * q**(1 / p) * B2 / B1
+        # Compute normalizing constant C
+        self.c = (p / (2 * q * sigma * beta(1 / p, q)))
 
-    z = (x - mu + m) / (v * sigma)
-    scale_term = p / (2 * v * sigma * q**(1 / p) * B1)
-    denom = (np.abs(z) ** p / (q * (1 + lambda_ * np.sign(z)) ** p) + 1) ** (1 / p + q)
-    return scale_term / denom
+    def pdf(self, x):
+        z = (x - self.mu) / self.sigma
+        b = (1 + self.lam * np.sign(z)) * np.abs(z) ** self.p / self.p
+        density = self.c * (1 + b) ** (-self.q)
+        return density
 
+    def rvs(self, size=1):
+        # Use rejection sampling for generating SGT-distributed samples
+        samples = []
+        max_pdf = self.pdf(self.mu)
+        while len(samples) < size:
+            x = np.random.standard_t(df=2 * self.q, size=1) * self.sigma + self.mu
+            y = uniform.rvs(scale=max_pdf)
+            if y < self.pdf(x):
+                samples.append(x[0])
+        return np.array(samples)
 
-def sample_sgt(n, mu, sigma, lambda_, p, q):
-    df = 2 * q
-    oversample = n * 10
-    proposal = np.random.standard_t(df, size=oversample) * sigma + mu
-
-    pdf_vals = sgt_pdf(proposal, mu, sigma, lambda_, p, q)
-    max_pdf = np.max(pdf_vals)
-    u = np.random.uniform(0, max_pdf, size=oversample)
-
-    accepted = proposal[u < pdf_vals]
-    if len(accepted) < n:
-        raise RuntimeError('Sampling failed. Try adjusting lambda, p, q or increase oversample rate.')
-
-    return accepted[:n]
-
-
-def generate_sgt_sequence(length: int, mu: float, sigma: float, lambda_: float, p: float, q: float) -> np.ndarray:
-    assert -1 < lambda_ < 1, 'Lambda must be in (-1, 1)'
-    assert p > 0 and q > 0, 'p and q must be positive'
-    assert sigma > 0, 'sigma must be positive'
-    return sample_sgt(length, mu, sigma, lambda_, p, q)
+    def generate_sequences(self, n_sequences, sequence_length, n_features=1):
+        total_samples = n_sequences * sequence_length * n_features
+        samples = self.rvs(size=total_samples)
+        return samples.reshape(n_sequences, sequence_length, n_features)
 
 
 @app.command()
@@ -111,9 +109,9 @@ def main(
     n_features: int = 1,
     mu: float = 0.0,
     sigma: float = 1.0,
-    lambda_: float = 0.99,
+    lam: float = -0.9,
     p: float = 2.0,
-    q: float = 2.0,
+    q: float = 1.5,
     smoothing_type: str = 'combined_cosine_gaussian',
     kernel_size: int = 99,
     kernel_sigma: float = 10.0,
@@ -122,20 +120,15 @@ def main(
 ):
     np.random.seed(seed)
     logger.info('Generating synthetic sequences with SGT distribution...')
-    logger.info(f'Params: mu={mu}, sigma={sigma}, lambda={lambda_}, p={p}, q={q}, smoothing={smoothing_type}')
+    logger.info(f'Params: mu={mu}, sigma={sigma}, lambda={lam}, p={p}, q={q}, smoothing={smoothing_type}')
 
-    dataset = []
+    sgt = SkewedGeneralizedT(mu=mu, sigma=sigma, lam=lam, p=p, q=q)
+    raw = sgt.generate_sequences(n_sequences, sequence_length, n_features)
 
-    for _ in range(n_sequences):
-        sequence = []
-        for _ in range(n_features):
-            raw = generate_sgt_sequence(sequence_length, mu, sigma, lambda_, p, q)
-            smoothed = smooth_sequence(raw, smoothing_type, kernel_size, kernel_sigma, period)
-            sequence.append(smoothed)
-        sequence = np.stack(sequence, axis=-1)
-        dataset.append(sequence)
-
-    dataset = np.stack(dataset)
+    dataset = np.zeros_like(raw)
+    for i in range(n_sequences):
+        for j in range(n_features):
+            dataset[i, :, j] = smooth_sequence(raw[i, :, j], smoothing_type, kernel_size, kernel_sigma, period)
     
     logger.info(f'Saving dataset to {output_path} with shape {dataset.shape}')
     
