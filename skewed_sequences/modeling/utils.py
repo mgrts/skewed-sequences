@@ -64,8 +64,8 @@ def compute_metrics(y_pred: torch.Tensor, y_true: torch.Tensor, eps: float = 1e-
     smape = (abs_diff / torch.clamp((torch.abs(y_true) + torch.abs(y_pred)) / 2, min=eps)).mean().item() * 100
 
     return {
-        'mape': mape,
-        'smape': smape,
+        'mape': round(mape, 4),
+        'smape': round(smape, 4),
     }
 
 

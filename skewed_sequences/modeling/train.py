@@ -5,9 +5,9 @@ import mlflow
 import typer
 from loguru import logger
 
-from skewed_sequences.config import PROCESSED_DATA_DIR, MODELS_DIR, TRACKING_URI, SEQUENCE_LENGTH
+from skewed_sequences.config import PROCESSED_DATA_DIR, MODELS_DIR, TRACKING_URI, SEQUENCE_LENGTH, SEED
 from skewed_sequences.modeling.loss_functions import SGTLoss
-from skewed_sequences.modeling.models import TransformerWithPE
+from skewed_sequences.modeling.models import TransformerWithPE, LSTM
 from skewed_sequences.modeling.data_processing import create_dataloaders
 from skewed_sequences.modeling.utils import set_seed
 from skewed_sequences.modeling.trainer import train_model
@@ -16,10 +16,10 @@ from skewed_sequences.modeling.evaluation import log_val_predictions
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
-def get_loss_function(loss_type: str):
+def get_loss_function(loss_type: str, sgt_loss_lambda: float = 0.0, sgt_loss_q: float = 2.0):
     loss_type = loss_type.lower()
     if loss_type == 'sgt':
-        return SGTLoss(p=2.0, q=2.0, lambda_=0.0, sigma=1.0)
+        return SGTLoss(sigma=1.0, p=2.0, q=sgt_loss_q, lambda_=sgt_loss_lambda)
     elif loss_type == 'mse':
         return torch.nn.MSELoss()
     elif loss_type == 'mae':
@@ -31,6 +31,7 @@ def get_loss_function(loss_type: str):
 @app.command()
 def main(
     dataset_path: Path = PROCESSED_DATA_DIR / 'synthetic_dataset.npy',
+    model_type: str = 'transformer',
     sequence_length: int = SEQUENCE_LENGTH,
     output_length: int = 60,
     embed_dim: int = 64,
@@ -40,9 +41,11 @@ def main(
     num_epochs: int = 100,
     learning_rate: float = 1e-4,
     test_split: float = 0.1,
-    seed: int = 933,
-    early_stopping_patience: int = 5,
+    seed: int = SEED,
+    early_stopping_patience: int = 15,
     loss_type: str = 'sgt',
+    sgt_loss_lambda: float = 0.0,
+    sgt_loss_q: float = 2.0,
     experiment_name: str = 'Transformer-SGT-synthetic',
 ):
     set_seed(seed)
@@ -67,15 +70,25 @@ def main(
         seed=seed,
     )
 
-    model = TransformerWithPE(
-        in_dim=data.shape[-1],
-        out_dim=data.shape[-1],
-        embed_dim=embed_dim,
-        num_heads=num_heads,
-        num_layers=num_layers,
-    ).to(device)
+    if model_type == 'transformer':
+        model = TransformerWithPE(
+            in_dim=data.shape[-1],
+            out_dim=data.shape[-1],
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            num_layers=num_layers,
+        ).to(device)
+    elif model_type == 'lstm':
+        model = LSTM(
+            input_dim=data.shape[-1],
+            hidden_dim=embed_dim,
+            num_layers=num_layers,
+            output_dim=data.shape[-1],
+        ).to(device)
+    else:
+        raise ValueError(f'Unsupported model type: {model_type}')
 
-    criterion = get_loss_function(loss_type)
+    criterion = get_loss_function(loss_type, sgt_loss_lambda=sgt_loss_lambda, sgt_loss_q=sgt_loss_q)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     mlflow.set_tracking_uri(TRACKING_URI)
@@ -88,6 +101,9 @@ def main(
         model_save_path = output_dir / 'model.pt'
 
         mlflow.log_params({
+            'model_type': model_type,
+            'sgt_loss_lambda': sgt_loss_lambda,
+            'sgt_loss_q': sgt_loss_q,
             'input_length': input_length,
             'output_length': output_length,
             'embed_dim': embed_dim,
@@ -111,8 +127,8 @@ def main(
         )
 
         mlflow.log_metrics({
-            'best_train_smape': best_val_metrics.get('smape'),
-            'best_val_smape': best_train_metrics.get('smape'),
+            'best_train_smape': best_train_metrics.get('smape'),
+            'best_val_smape': best_val_metrics.get('smape'),
         })
 
         log_val_predictions(model, val_loader, model_path=model_save_path)

@@ -3,7 +3,7 @@ import numpy as np
 import typer
 from loguru import logger
 from scipy.special import beta
-from scipy.stats import uniform
+from scipy.stats import t
 
 from skewed_sequences.config import SEED, SEQUENCE_LENGTH, PROCESSED_DATA_DIR
 
@@ -65,9 +65,9 @@ def smooth_sequence(sequence, smoothing_type, kernel_size, sigma, period):
 
 class SkewedGeneralizedT:
     def __init__(self, mu=0.0, sigma=1.0, lam=0.0, p=2.0, q=2.0):
-        assert -1 < lam < 1, "Lambda (lam) must be in (-1, 1)"
-        assert sigma > 0, "Sigma must be positive"
-        assert p > 0 and q > 0, "Shape parameters p and q must be positive"
+        assert -1 < lam < 1, "lam must be in (-1, 1)"
+        assert sigma > 0, "sigma must be positive"
+        assert p > 0 and q > 0, "p and q must be positive"
 
         self.mu = mu
         self.sigma = sigma
@@ -75,24 +75,35 @@ class SkewedGeneralizedT:
         self.p = p
         self.q = q
 
-        # Compute normalizing constant C
-        self.c = (p / (2 * q * sigma * beta(1 / p, q)))
+        # Compute beta functions
+        B1 = beta(1.0/p, q)
+        B2 = beta(2.0/p, q - 1.0/p)
+        B3 = beta(3.0/p, q - 2.0/p)
+
+        # Compute v and m as per the provided formulas
+        self.v = q**(-1.0/p) / np.sqrt((1 + 3*lam**2)*(B3 / B1) - 4*lam**2*(B2 / B1)**2)
+        self.m = lam * self.v * sigma * (2 * q**(1.0/p) * B2 / B1)
+
+        # Normalizing constant
+        self.norm_const = p / (2 * self.v * sigma * q**(1.0/p) * B1)
 
     def pdf(self, x):
-        z = (x - self.mu) / self.sigma
-        b = (1 + self.lam * np.sign(z)) * np.abs(z) ** self.p / self.p
-        density = self.c * (1 + b) ** (-self.q)
-        return density
+        x = np.asarray(x, dtype=float)
+        z = x - self.mu + self.m
+        sgn_z = np.sign(z)
+        denom = self.q * (self.sigma * self.v)**self.p * (1 + self.lam * sgn_z)**self.p
+        bracket = 1 + (np.abs(z)**self.p) / denom
+        return self.norm_const * bracket**(-(1/self.p + self.q))
 
     def rvs(self, size=1):
-        # Use rejection sampling for generating SGT-distributed samples
         samples = []
-        max_pdf = self.pdf(self.mu)
+        # Use pdf at mu - m as a rough upper bound for rejection sampling
+        max_pdf = self.pdf(self.mu - self.m)
         while len(samples) < size:
-            x = np.random.standard_t(df=2 * self.q, size=1) * self.sigma + self.mu
-            y = uniform.rvs(scale=max_pdf)
-            if y < self.pdf(x):
-                samples.append(x[0])
+            x_candidate = t.rvs(df=2*self.q, size=1) * self.sigma + self.mu
+            y = np.random.uniform(0, max_pdf)
+            if y < self.pdf(x_candidate):
+                samples.append(x_candidate[0])
         return np.array(samples)
 
     def generate_sequences(self, n_sequences, sequence_length, n_features=1):
@@ -109,9 +120,9 @@ def main(
     n_features: int = 1,
     mu: float = 0.0,
     sigma: float = 1.0,
-    lam: float = -0.9,
+    lam: float = 0.0,
     p: float = 2.0,
-    q: float = 1.5,
+    q: float = 2.0,
     smoothing_type: str = 'combined_cosine_gaussian',
     kernel_size: int = 99,
     kernel_sigma: float = 10.0,
