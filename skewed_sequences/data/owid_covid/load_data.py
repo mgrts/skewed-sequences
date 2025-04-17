@@ -1,9 +1,9 @@
 from pathlib import Path
 
+import requests
 import typer
 from loguru import logger
 from tqdm import tqdm
-import requests
 
 from skewed_sequences.config import DATA_URL, RAW_DATA_DIR
 
@@ -51,9 +51,9 @@ def download(
     output_path: Path = typer.Option(RAW_DATA_DIR / 'dataset.csv', help='Path to save the downloaded dataset.'),
 ):
     logger.info(f'Starting download from {input_url}')
-    
+
     final_path = download_file_with_progress(input_url, output_path)
-    
+
     logger.success(f'Download complete: {final_path}')
 
 

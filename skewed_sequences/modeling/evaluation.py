@@ -1,6 +1,6 @@
-import torch
-import mlflow
 import matplotlib.pyplot as plt
+import mlflow
+import torch
 
 from skewed_sequences.modeling.visualize import visualize_prediction
 

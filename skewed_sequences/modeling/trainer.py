@@ -1,8 +1,9 @@
-import torch
 import mlflow
+import torch
 from loguru import logger
 
-from skewed_sequences.modeling.utils import train_epoch, evaluate, compute_metrics, EarlyStopping
+from skewed_sequences.modeling.utils import (EarlyStopping, compute_metrics,
+                                             evaluate, train_epoch)
 
 
 def train_model(

@@ -1,12 +1,13 @@
 from pathlib import Path
 
-import typer
-from loguru import logger
 import numpy as np
 import pandas as pd
+import typer
+from loguru import logger
 from sklearn.preprocessing import StandardScaler
 
-from skewed_sequences.config import PROCESSED_DATA_DIR, EXTERNAL_DATA_DIR, SEQUENCE_LENGTH
+from skewed_sequences.config import (EXTERNAL_DATA_DIR, PROCESSED_DATA_DIR,
+                                     SEQUENCE_LENGTH)
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 

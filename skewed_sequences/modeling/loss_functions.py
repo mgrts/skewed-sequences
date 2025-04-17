@@ -4,18 +4,18 @@ from scipy.special import beta
 
 
 class SGTLoss(nn.Module):
-    def __init__(self, p=2.0, q=2.0, lambda_=0.0, sigma=1.0, eps=1e-6):
+    def __init__(self, p=2.0, q=2.0, lam=0.0, sigma=1.0, eps=1e-6):
         super().__init__()
         self.p = p
         self.q = q
-        self.lambda_ = lambda_
+        self.lam = lam
         self.sigma = sigma  # sigma must be > 0
         self.eps = eps
 
     def forward(self, y, y_pred):
         p = self.p
         q = self.q
-        lam = self.lambda_
+        lam = self.lam
         sigma = self.sigma
         eps = self.eps
 
@@ -44,3 +44,20 @@ class SGTLoss(nn.Module):
         loss = (1 / p + q) * torch.log(1 + ratio + eps)
 
         return loss.mean()
+
+
+class CauchyLoss(nn.Module):
+    def __init__(self, gamma=1.0, reduction='mean'):
+        super(CauchyLoss, self).__init__()
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, input, target):
+        diffs = input - target
+        loss = self.gamma * torch.log(1 + (diffs ** 2) / self.gamma)
+        if self.reduction == 'sum':
+            return loss.sum()
+        elif self.reduction == 'mean':
+            return loss.mean()
+        else:
+            return loss

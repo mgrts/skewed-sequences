@@ -1,11 +1,12 @@
 from pathlib import Path
+
 import numpy as np
 import typer
 from loguru import logger
 from scipy.special import beta
 from scipy.stats import t
 
-from skewed_sequences.config import SEED, SEQUENCE_LENGTH, PROCESSED_DATA_DIR
+from skewed_sequences.config import PROCESSED_DATA_DIR, SEED, SEQUENCE_LENGTH
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -76,16 +77,16 @@ class SkewedGeneralizedT:
         self.q = q
 
         # Compute beta functions
-        B1 = beta(1.0/p, q)
-        B2 = beta(2.0/p, q - 1.0/p)
-        B3 = beta(3.0/p, q - 2.0/p)
+        B1 = beta(1.0 / p, q)
+        B2 = beta(2.0 / p, q - 1.0 / p)
+        B3 = beta(3.0 / p, q - 2.0 / p)
 
         # Compute v and m as per the provided formulas
-        self.v = q**(-1.0/p) / np.sqrt((1 + 3*lam**2)*(B3 / B1) - 4*lam**2*(B2 / B1)**2)
-        self.m = lam * self.v * sigma * (2 * q**(1.0/p) * B2 / B1)
+        self.v = q ** (-1.0 / p) / np.sqrt((1 + 3 * lam ** 2) * (B3 / B1) - 4 * lam ** 2 * (B2 / B1) ** 2)
+        self.m = lam * self.v * sigma * (2 * q ** (1.0 / p) * B2 / B1)
 
         # Normalizing constant
-        self.norm_const = p / (2 * self.v * sigma * q**(1.0/p) * B1)
+        self.norm_const = p / (2 * self.v * sigma * q**(1.0 / p) * B1)
 
     def pdf(self, x):
         x = np.asarray(x, dtype=float)
@@ -93,14 +94,14 @@ class SkewedGeneralizedT:
         sgn_z = np.sign(z)
         denom = self.q * (self.sigma * self.v)**self.p * (1 + self.lam * sgn_z)**self.p
         bracket = 1 + (np.abs(z)**self.p) / denom
-        return self.norm_const * bracket**(-(1/self.p + self.q))
+        return self.norm_const * bracket ** (-(1 / self.p + self.q))
 
     def rvs(self, size=1):
         samples = []
         # Use pdf at mu - m as a rough upper bound for rejection sampling
         max_pdf = self.pdf(self.mu - self.m)
         while len(samples) < size:
-            x_candidate = t.rvs(df=2*self.q, size=1) * self.sigma + self.mu
+            x_candidate = t.rvs(df=2 * self.q, size=1) * self.sigma + self.mu
             y = np.random.uniform(0, max_pdf)
             if y < self.pdf(x_candidate):
                 samples.append(x_candidate[0])
@@ -123,6 +124,7 @@ def main(
     lam: float = 0.0,
     p: float = 2.0,
     q: float = 2.0,
+    apply_smoothing: bool = True,
     smoothing_type: str = 'combined_cosine_gaussian',
     kernel_size: int = 99,
     kernel_sigma: float = 10.0,
@@ -139,12 +141,15 @@ def main(
     dataset = np.zeros_like(raw)
     for i in range(n_sequences):
         for j in range(n_features):
-            dataset[i, :, j] = smooth_sequence(raw[i, :, j], smoothing_type, kernel_size, kernel_sigma, period)
-    
+            if apply_smoothing:
+                dataset[i, :, j] = smooth_sequence(raw[i, :, j], smoothing_type, kernel_size, kernel_sigma, period)
+            else:
+                dataset[i, :, j] = raw[i, :, j]
+
     logger.info(f'Saving dataset to {output_path} with shape {dataset.shape}')
-    
+
     np.save(output_path, dataset)
-    
+
     logger.success('Dataset generation complete.')
 
 
