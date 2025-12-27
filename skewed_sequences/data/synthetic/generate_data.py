@@ -116,7 +116,7 @@ class SkewedGeneralizedT:
 @app.command()
 def main(
     output_path: Path = PROCESSED_DATA_DIR / 'synthetic_dataset.npy',
-    n_sequences: int = 1000,
+    n_sequences: int = 10000,
     sequence_length: int = SEQUENCE_LENGTH,
     n_features: int = 1,
     mu: float = 0.0,
