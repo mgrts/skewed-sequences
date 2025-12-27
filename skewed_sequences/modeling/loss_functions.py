@@ -27,7 +27,9 @@ class SGTLoss(nn.Module):
         B3 = torch.tensor(beta(3.0 / p, q - 2.0 / p), dtype=dtype, device=device)
 
         v_numer = q ** (-1.0 / p)
-        v_denom = torch.sqrt((1 + 3 * lam ** 2) * (B3 / B1) - 4 * lam ** 2 * (B2 / B1) ** 2)
+        v_denom = torch.sqrt(
+            (1 + 3 * lam ** 2) * (B3 / B1) - 4 * lam ** 2 * (B2 / B1) ** 2
+        )
         v = v_numer / (v_denom + eps)
 
         sigma_t = torch.tensor(sigma, dtype=dtype, device=device)
@@ -36,11 +38,9 @@ class SGTLoss(nn.Module):
 
         diff = y - y_pred + m
         scaled = torch.abs(diff / (sigma_t * v)) ** p
-
         skew_term = (1 + lam * torch.sign(diff)) ** p
 
         ratio = scaled / (q * skew_term + eps)
-
         loss = (1 / p + q) * torch.log(1 + ratio + eps)
 
         return loss.mean()
@@ -48,16 +48,63 @@ class SGTLoss(nn.Module):
 
 class CauchyLoss(nn.Module):
     def __init__(self, gamma=1.0, reduction='mean'):
-        super(CauchyLoss, self).__init__()
+        super().__init__()
         self.gamma = gamma
         self.reduction = reduction
 
     def forward(self, input, target):
         diffs = input - target
         loss = self.gamma * torch.log(1 + (diffs ** 2) / self.gamma)
+
         if self.reduction == 'sum':
             return loss.sum()
         elif self.reduction == 'mean':
             return loss.mean()
-        else:
-            return loss
+        return loss
+
+
+class HuberLoss(nn.Module):
+    def __init__(self, delta=1.0, reduction='mean'):
+        super().__init__()
+        self.delta = delta
+        self.reduction = reduction
+
+    def forward(self, input, target):
+        diff = input - target
+        abs_diff = torch.abs(diff)
+
+        loss = torch.where(
+            abs_diff <= self.delta,
+            0.5 * diff ** 2,
+            self.delta * (abs_diff - 0.5 * self.delta)
+        )
+
+        if self.reduction == 'sum':
+            return loss.sum()
+        elif self.reduction == 'mean':
+            return loss.mean()
+        return loss
+
+
+class TukeyLoss(nn.Module):
+    def __init__(self, c=4.685, reduction='mean'):
+        super().__init__()
+        self.c = c
+        self.reduction = reduction
+
+    def forward(self, input, target):
+        diff = input - target
+        abs_diff = torch.abs(diff)
+
+        mask = abs_diff <= self.c
+        r = diff / self.c
+
+        loss = torch.zeros_like(diff)
+        loss[mask] = (self.c ** 2 / 6) * (1 - (1 - r[mask] ** 2) ** 3)
+        loss[~mask] = self.c ** 2 / 6
+
+        if self.reduction == 'sum':
+            return loss.sum()
+        elif self.reduction == 'mean':
+            return loss.mean()
+        return loss

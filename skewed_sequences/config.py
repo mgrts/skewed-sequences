@@ -39,7 +39,7 @@ try:
 except ModuleNotFoundError:
     pass
 
-N_RUNS = 5
+N_RUNS = 10
 
 SGT_LOSS_LAMBDAS = [-0.1, -0.01, -0.001, -0.0001, 0.0, 0.0001, 0.001, 0.01, 0.1]
 
@@ -64,4 +64,6 @@ TRAINING_CONFIGS = [
     {'loss_type': 'mse'},
     {'loss_type': 'mae'},
     {'loss_type': 'cauchy'},
+    {'loss_type': 'huber'},
+    {'loss_type': 'tukey'},
 ]

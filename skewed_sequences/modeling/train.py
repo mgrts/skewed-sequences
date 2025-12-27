@@ -10,7 +10,7 @@ from skewed_sequences.config import (MODELS_DIR, PROCESSED_DATA_DIR, SEED,
                                      SEQUENCE_LENGTH, TRACKING_URI)
 from skewed_sequences.modeling.data_processing import create_dataloaders
 from skewed_sequences.modeling.evaluation import log_val_predictions
-from skewed_sequences.modeling.loss_functions import CauchyLoss, SGTLoss
+from skewed_sequences.modeling.loss_functions import CauchyLoss, SGTLoss, HuberLoss, TukeyLoss
 from skewed_sequences.modeling.models import LSTM, TransformerWithPE
 from skewed_sequences.modeling.trainer import train_model
 from skewed_sequences.modeling.utils import set_seed
@@ -28,6 +28,10 @@ def get_loss_function(loss_type: str, sgt_loss_lambda: float = 0.0, sgt_loss_q: 
         return torch.nn.L1Loss()
     elif loss_type == 'cauchy':
         return CauchyLoss(gamma=2.0)
+    elif loss_type == 'huber':
+        return HuberLoss(delta=1.0)
+    elif loss_type == 'tukey':
+        return TukeyLoss(c=4.685)
     else:
         raise ValueError(f'Unsupported loss type: {loss_type}')
 
