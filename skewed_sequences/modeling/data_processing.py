@@ -1,8 +1,8 @@
 from typing import Tuple
 
 import numpy as np
-import torch
 from sklearn.model_selection import train_test_split
+import torch
 from torch.utils.data import DataLoader, Dataset
 
 
@@ -10,7 +10,7 @@ class SequenceDataset(Dataset):
     def __init__(self, data: np.ndarray, input_len: int, output_len: int):
         super().__init__()
         self.inputs = data[:, :input_len, :]
-        self.targets = data[:, input_len:input_len + output_len, :]
+        self.targets = data[:, input_len : input_len + output_len, :]
 
     def __len__(self):
         return len(self.inputs)
@@ -35,7 +35,11 @@ def create_dataloaders(
 
     train_data, val_data = train_test_split(data, test_size=test_split, random_state=seed)
 
-    train_loader = DataLoader(SequenceDataset(train_data, input_len, output_len), batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(SequenceDataset(val_data, input_len, output_len), batch_size=batch_size)
+    train_loader = DataLoader(
+        SequenceDataset(train_data, input_len, output_len), batch_size=batch_size, shuffle=True
+    )
+    val_loader = DataLoader(
+        SequenceDataset(val_data, input_len, output_len), batch_size=batch_size
+    )
 
     return train_loader, val_loader

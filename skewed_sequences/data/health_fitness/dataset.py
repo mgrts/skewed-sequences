@@ -1,12 +1,12 @@
 from pathlib import Path
 
+from loguru import logger
 import numpy as np
 import pandas as pd
-import typer
-from loguru import logger
 from sklearn.preprocessing import StandardScaler
+import typer
 
-from skewed_sequences.config import EXTERNAL_DATA_DIR, PROCESSED_DATA_DIR
+from skewed_sequences.config import EXTERNAL_DATA_DIR, PROCESSED_DATA_DIR, SEQUENCE_LENGTH
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -29,35 +29,33 @@ def slice_array_to_chunks(array, chunk_size=300):
 
 @app.command()
 def main(
-    input_path: Path = EXTERNAL_DATA_DIR / 'health_fitness_data.csv',
-    output_path: Path = PROCESSED_DATA_DIR / 'health_fitness_data.npy',
-    time_series: str = 'hours_sleep',
+    input_path: Path = EXTERNAL_DATA_DIR / "health_fitness_data.csv",
+    output_path: Path = PROCESSED_DATA_DIR / "health_fitness_data.npy",
+    time_series: str = "hours_sleep",
     # time_series: str = 'avg_heart_rate',
-    sequence_length: int = 200,
+    sequence_length: int = SEQUENCE_LENGTH,
     rolling_window: int = 20,
 ):
-    logger.info('Processinng Fitness Tracker data')
+    logger.info("Processing Fitness Tracker data")
 
     data = pd.read_csv(input_path)
 
-    data['date'] = pd.to_datetime(data['date'])
-    data = data.sort_values(['participant_id', 'date'])
+    data["date"] = pd.to_datetime(data["date"])
+    data = data.sort_values(["participant_id", "date"])
 
-    data[time_series] = (
-        data.groupby('participant_id')[time_series]
-        .transform(lambda x: x.ffill().bfill())
+    data[time_series] = data.groupby("participant_id")[time_series].transform(
+        lambda x: x.ffill().bfill()
     )
 
-    data[f'smoothed_{time_series}'] = (
-        data.groupby('participant_id')[time_series]
-        .transform(lambda x: x.rolling(window=rolling_window, min_periods=1).mean())
+    data[f"smoothed_{time_series}"] = data.groupby("participant_id")[time_series].transform(
+        lambda x: x.rolling(window=rolling_window, min_periods=1).mean()
     )
 
     sequences = []
-    participant_ids = data['participant_id'].unique()
+    participant_ids = data["participant_id"].unique()
 
     for participant_id in participant_ids:
-        ts_data = data[data['participant_id'] == participant_id][f'smoothed_{time_series}'].values
+        ts_data = data[data["participant_id"] == participant_id][f"smoothed_{time_series}"].values
 
         if len(ts_data) >= sequence_length:
             chunks = slice_array_to_chunks(ts_data, sequence_length)
@@ -69,13 +67,13 @@ def main(
     sequences = np.vstack(sequences)
     sequences = sequences[..., np.newaxis]
 
-    logger.info('Saving processed data')
+    logger.info("Saving processed data")
 
-    with open(output_path, 'wb') as f:
+    with open(output_path, "wb") as f:
         np.save(f, sequences)
 
-    logger.success('Processing complete')
+    logger.success("Processing complete")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app()

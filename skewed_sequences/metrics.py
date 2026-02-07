@@ -1,5 +1,5 @@
-import numpy as np
 from loguru import logger
+import numpy as np
 
 
 def mean_abs_deviation(x: np.ndarray) -> float:
@@ -22,13 +22,13 @@ def kappa(x: np.ndarray, n: int) -> float:
     x = np.asarray(x)
 
     if n <= 1:
-        raise ValueError('n must be greater than 1')
+        raise ValueError("n must be greater than 1")
 
     m1 = mean_abs_deviation(x)
     mn = mean_abs_deviation(generate_n_sample(x, n))
 
     if mn <= 0 or m1 <= 0:
-        raise ValueError('MAD of sample resulted in zero or negative, cannot compute log ratio.')
+        raise ValueError("MAD of sample resulted in zero or negative, cannot compute log ratio.")
 
     return 2 - (np.log(n) / np.log(mn / m1))
 
@@ -55,7 +55,7 @@ def compute_dispersion_scaling_series(X: np.ndarray, num_values: int = 100):
             values = estimate_kappa_exponent(X, i + 1)
             metric_array[i] = values
         except Exception as e:
-            logger.warning(f'Failed to compute dispersion scaling at n={i + 1}: {e}')
+            logger.warning(f"Failed to compute dispersion scaling at n={i + 1}: {e}")
             metric_array[i] = np.nan
 
     return metric_array
@@ -67,6 +67,6 @@ def skewness(x: np.ndarray) -> float:
     std = np.std(x, ddof=1)
 
     if std == 0:
-        raise ValueError('Standard deviation is zero; skewness is undefined.')
+        raise ValueError("Standard deviation is zero; skewness is undefined.")
 
-    return np.mean((x - mean) ** 3) / (std ** 3)
+    return np.mean((x - mean) ** 3) / (std**3)

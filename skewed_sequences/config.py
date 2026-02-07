@@ -8,22 +8,22 @@ load_dotenv()
 
 # Paths
 PROJ_ROOT = Path(__file__).resolve().parents[1]
-logger.info(f'PROJ_ROOT path is: {PROJ_ROOT}')
+logger.info(f"PROJ_ROOT path is: {PROJ_ROOT}")
 
-DATA_URL = 'https://covid.ourworldindata.org/data/owid-covid-data.csv'
+DATA_URL = "https://covid.ourworldindata.org/data/owid-covid-data.csv"
 
-DATA_DIR = PROJ_ROOT / 'data'
-RAW_DATA_DIR = DATA_DIR / 'raw'
-INTERIM_DATA_DIR = DATA_DIR / 'interim'
-PROCESSED_DATA_DIR = DATA_DIR / 'processed'
-EXTERNAL_DATA_DIR = DATA_DIR / 'external'
+DATA_DIR = PROJ_ROOT / "data"
+RAW_DATA_DIR = DATA_DIR / "raw"
+INTERIM_DATA_DIR = DATA_DIR / "interim"
+PROCESSED_DATA_DIR = DATA_DIR / "processed"
+EXTERNAL_DATA_DIR = DATA_DIR / "external"
 
-MODELS_DIR = PROJ_ROOT / 'models'
+MODELS_DIR = PROJ_ROOT / "models"
 
-REPORTS_DIR = PROJ_ROOT / 'reports'
-FIGURES_DIR = REPORTS_DIR / 'figures'
+REPORTS_DIR = PROJ_ROOT / "reports"
+FIGURES_DIR = REPORTS_DIR / "figures"
 
-TRACKING_URI = PROJ_ROOT / 'mlruns'
+TRACKING_URI = PROJ_ROOT / "mlruns"
 
 SEED = 927
 
@@ -35,7 +35,7 @@ try:
     from tqdm import tqdm
 
     logger.remove(0)
-    logger.add(lambda msg: tqdm.write(msg, end=''), colorize=True)
+    logger.add(lambda msg: tqdm.write(msg, end=""), colorize=True)
 except ModuleNotFoundError:
     pass
 
@@ -43,27 +43,91 @@ N_RUNS = 10
 
 SGT_LOSS_LAMBDAS = [-0.1, -0.01, -0.001, -0.0001, 0.0, 0.0001, 0.001, 0.01, 0.1]
 
+# 5-step prediction horizon: a more complex task that better differentiates
+# loss function behavior with the Transformer architecture.
+OUTPUT_LENGTH = 5
+
 SYNTHETIC_DATA_CONFIGS = [
-    {'lam': 0.0, 'q': 100.0, 'sigma': 0.707, 'experiment_name': 'normal'},
-    {'lam': 0.0, 'q': 1.001, 'sigma': 15.0, 'experiment_name': 'heavy-tailed'},
-    {'lam': 0.9, 'q': 100.0, 'sigma': 0.707, 'experiment_name': 'normal-skewed'},
-    {'lam': 0.9, 'q': 1.001, 'sigma': 15.0, 'experiment_name': 'heavy-tailed-skewed'},
+    {"lam": 0.0, "q": 100.0, "sigma": 0.707, "experiment_name": "normal"},
+    {"lam": 0.0, "q": 1.001, "sigma": 15.0, "experiment_name": "heavy-tailed"},
+    {"lam": 0.9, "q": 100.0, "sigma": 0.707, "experiment_name": "normal-skewed"},
+    {"lam": 0.9, "q": 1.001, "sigma": 15.0, "experiment_name": "heavy-tailed-skewed"},
 ]
 
 TRAINING_CONFIGS = [
-    {'loss_type': 'sgt', 'sgt_loss_lambda': 0.0, 'sgt_loss_q': 1.001, 'sgt_loss_sigma': 15.0},
-    {'loss_type': 'sgt', 'sgt_loss_lambda': 0.002, 'sgt_loss_q': 1.001, 'sgt_loss_sigma': 15.0},
-    {'loss_type': 'sgt', 'sgt_loss_lambda': 0.0, 'sgt_loss_q': 100.0, 'sgt_loss_sigma': 0.707},
-    {'loss_type': 'sgt', 'sgt_loss_lambda': 0.002, 'sgt_loss_q': 100.0, 'sgt_loss_sigma': 0.707},
-    {'loss_type': 'sgt', 'sgt_loss_lambda': 0.0, 'sgt_loss_q': 5.0, 'sgt_loss_sigma': 0.707},
-    {'loss_type': 'sgt', 'sgt_loss_lambda': 0.002, 'sgt_loss_q': 5.0, 'sgt_loss_sigma': 0.707},
-    {'loss_type': 'sgt', 'sgt_loss_lambda': 0.0, 'sgt_loss_q': 20.0, 'sgt_loss_sigma': 0.707},
-    {'loss_type': 'sgt', 'sgt_loss_lambda': 0.002, 'sgt_loss_q': 20.0, 'sgt_loss_sigma': 0.707},
-    {'loss_type': 'sgt', 'sgt_loss_lambda': 0.0, 'sgt_loss_q': 75.0, 'sgt_loss_sigma': 0.707},
-    {'loss_type': 'sgt', 'sgt_loss_lambda': 0.002, 'sgt_loss_q': 75.0, 'sgt_loss_sigma': 0.707},
-    {'loss_type': 'mse'},
-    {'loss_type': 'mae'},
-    {'loss_type': 'cauchy'},
-    {'loss_type': 'huber'},
-    {'loss_type': 'tukey'},
+    {
+        "loss_type": "sgt",
+        "sgt_loss_lambda": 0.0,
+        "sgt_loss_q": 1.001,
+        "sgt_loss_sigma": 15.0,
+        "output_length": OUTPUT_LENGTH,
+    },
+    {
+        "loss_type": "sgt",
+        "sgt_loss_lambda": 0.002,
+        "sgt_loss_q": 1.001,
+        "sgt_loss_sigma": 15.0,
+        "output_length": OUTPUT_LENGTH,
+    },
+    {
+        "loss_type": "sgt",
+        "sgt_loss_lambda": 0.0,
+        "sgt_loss_q": 100.0,
+        "sgt_loss_sigma": 0.707,
+        "output_length": OUTPUT_LENGTH,
+    },
+    {
+        "loss_type": "sgt",
+        "sgt_loss_lambda": 0.002,
+        "sgt_loss_q": 100.0,
+        "sgt_loss_sigma": 0.707,
+        "output_length": OUTPUT_LENGTH,
+    },
+    {
+        "loss_type": "sgt",
+        "sgt_loss_lambda": 0.0,
+        "sgt_loss_q": 5.0,
+        "sgt_loss_sigma": 0.707,
+        "output_length": OUTPUT_LENGTH,
+    },
+    {
+        "loss_type": "sgt",
+        "sgt_loss_lambda": 0.002,
+        "sgt_loss_q": 5.0,
+        "sgt_loss_sigma": 0.707,
+        "output_length": OUTPUT_LENGTH,
+    },
+    {
+        "loss_type": "sgt",
+        "sgt_loss_lambda": 0.0,
+        "sgt_loss_q": 20.0,
+        "sgt_loss_sigma": 0.707,
+        "output_length": OUTPUT_LENGTH,
+    },
+    {
+        "loss_type": "sgt",
+        "sgt_loss_lambda": 0.002,
+        "sgt_loss_q": 20.0,
+        "sgt_loss_sigma": 0.707,
+        "output_length": OUTPUT_LENGTH,
+    },
+    {
+        "loss_type": "sgt",
+        "sgt_loss_lambda": 0.0,
+        "sgt_loss_q": 75.0,
+        "sgt_loss_sigma": 0.707,
+        "output_length": OUTPUT_LENGTH,
+    },
+    {
+        "loss_type": "sgt",
+        "sgt_loss_lambda": 0.002,
+        "sgt_loss_q": 75.0,
+        "sgt_loss_sigma": 0.707,
+        "output_length": OUTPUT_LENGTH,
+    },
+    {"loss_type": "mse", "output_length": OUTPUT_LENGTH},
+    {"loss_type": "mae", "output_length": OUTPUT_LENGTH},
+    {"loss_type": "cauchy", "output_length": OUTPUT_LENGTH},
+    {"loss_type": "huber", "output_length": OUTPUT_LENGTH},
+    {"loss_type": "tukey", "output_length": OUTPUT_LENGTH},
 ]

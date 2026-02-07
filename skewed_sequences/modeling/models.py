@@ -1,8 +1,8 @@
 import math
 
 import torch
-import torch.nn as nn
 from torch import Tensor
+import torch.nn as nn
 
 
 class PositionalEncoding(nn.Module):
@@ -20,10 +20,10 @@ class PositionalEncoding(nn.Module):
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)  # Shape: (1, max_len, d_model)
 
-        self.register_buffer('pe', pe)
+        self.register_buffer("pe", pe)
 
     def forward(self, x: Tensor) -> Tensor:
-        x = x + self.pe[:, :x.size(1)]
+        x = x + self.pe[:, : x.size(1)]
         return self.dropout(x)
 
 
@@ -55,11 +55,11 @@ class TransformerWithPE(nn.Module):
         )
 
         self.output_layer = nn.Linear(embed_dim, out_dim)
-        self.register_buffer('cached_mask', None)
+        self.register_buffer("cached_mask", None)
 
     def _generate_square_subsequent_mask(self, sz: int) -> Tensor:
         if self.cached_mask is None or self.cached_mask.size(0) < sz:
-            mask = torch.triu(torch.full((sz, sz), float('-inf')), diagonal=1)
+            mask = torch.triu(torch.full((sz, sz), float("-inf")), diagonal=1)
             self.cached_mask = mask
         return self.cached_mask[:sz, :sz]
 

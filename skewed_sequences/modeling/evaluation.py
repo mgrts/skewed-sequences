@@ -26,7 +26,7 @@ def log_val_predictions(model, val_loader, model_path, num_vis_examples: int = 5
                     break
 
                 fig = visualize_prediction(src, tgt, pred, pred_infer, idx=i)
-                mlflow.log_figure(fig, f'prediction_{vis_count}.png')
+                mlflow.log_figure(fig, f"prediction_{vis_count}.png")
                 plt.close(fig)
 
                 vis_count += 1

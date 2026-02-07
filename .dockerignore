@@ -1,0 +1,24 @@
+# Ignore everything that containers don't need
+__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+.pre-commit-config.yaml
+.venv
+venv
+*.egg-info
+dist
+build
+mlruns
+models
+notebooks
+docs
+references
+*.md
+!README.md
+.DS_Store
+.mypy_cache
+.pytest_cache
+.coverage
+htmlcov

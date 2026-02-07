@@ -1,16 +1,16 @@
 from pathlib import Path
 
+from loguru import logger
 import numpy as np
 import pandas as pd
-import typer
-from loguru import logger
 from sklearn.preprocessing import StandardScaler
+import typer
 
 from skewed_sequences.config import (
-    RAW_DATA_DIR,
     PROCESSED_DATA_DIR,
-    SEQUENCE_LENGTH,
+    RAW_DATA_DIR,
     SEED,
+    SEQUENCE_LENGTH,
 )
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
@@ -59,8 +59,8 @@ def random_sample(
 
 @app.command()
 def main(
-    input_path: Path = RAW_DATA_DIR / 'LANL-Earthquake-Prediction' / 'train.csv',
-    output_path: Path = PROCESSED_DATA_DIR / 'lanl_sequences.npy',
+    input_path: Path = RAW_DATA_DIR / "LANL-Earthquake-Prediction" / "train.csv",
+    output_path: Path = PROCESSED_DATA_DIR / "lanl_sequences.npy",
     sequence_length: int = SEQUENCE_LENGTH,
     max_rows: int | None = None,
 ):
@@ -68,30 +68,30 @@ def main(
     Create fixed-length normalized sequences from the LANL Earthquake dataset.
     """
 
-    logger.info('Processing LANL Earthquake dataset')
+    logger.info("Processing LANL Earthquake dataset")
 
-    logger.info('Reading CSV')
+    logger.info("Reading CSV")
     df = pd.read_csv(
         input_path,
-        usecols=['acoustic_data'],
-        dtype={'acoustic_data': np.int16},
+        usecols=["acoustic_data"],
+        dtype={"acoustic_data": np.int16},
         nrows=max_rows,
     )
 
-    signal = df['acoustic_data'].values.astype(np.float32)
-    logger.info(f'Loaded signal length: {len(signal):,}')
+    signal = df["acoustic_data"].values.astype(np.float32)
+    logger.info(f"Loaded signal length: {len(signal):,}")
 
-    logger.info('Slicing signal into fixed-length sequences')
+    logger.info("Slicing signal into fixed-length sequences")
     chunks = slice_array_to_chunks(signal, sequence_length)
 
     chunks = random_sample(chunks, n_samples=5000, seed=SEED)
 
-    logger.info(f'Number of sequences: {len(chunks):,}')
+    logger.info(f"Number of sequences: {len(chunks):,}")
 
     sequences = []
     scaler = StandardScaler()
 
-    logger.info('Scaling sequences')
+    logger.info("Scaling sequences")
     for chunk in chunks:
         if len(chunk) < sequence_length:
             continue  # safety guard
@@ -102,16 +102,16 @@ def main(
     sequences = np.vstack(sequences)
     sequences = sequences[..., np.newaxis]  # (N, T, 1)
 
-    logger.info(f'Final dataset shape: {sequences.shape}')
+    logger.info(f"Final dataset shape: {sequences.shape}")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    logger.info('Saving processed dataset')
-    with open(output_path, 'wb') as f:
+    logger.info("Saving processed dataset")
+    with open(output_path, "wb") as f:
         np.save(f, sequences)
 
-    logger.success('LANL dataset processing complete.')
+    logger.success("LANL dataset processing complete.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app()

@@ -1,9 +1,8 @@
+from loguru import logger
 import mlflow
 import torch
-from loguru import logger
 
-from skewed_sequences.modeling.utils import (EarlyStopping, compute_metrics,
-                                             evaluate, train_epoch)
+from skewed_sequences.modeling.utils import EarlyStopping, compute_metrics, evaluate, train_epoch
 
 
 def train_model(
@@ -19,7 +18,7 @@ def train_model(
     device = next(model.parameters()).device
     early_stopper = EarlyStopping(patience=early_stopping_patience)
 
-    best_val_loss = float('inf')
+    best_val_loss = float("inf")
     best_train_metrics = {}
     best_val_metrics = {}
 
@@ -34,18 +33,21 @@ def train_model(
             val_metrics = _collect_metrics(model, val_loader, device, val_loss)
 
         # Log to MLflow
-        mlflow.log_metrics({
-            'train_loss': train_loss,
-            'val_loss': val_loss,
-            'train_mape': train_metrics['mape'],
-            'train_smape': train_metrics['smape'],
-            'val_mape': val_metrics['mape'],
-            'val_smape': val_metrics['smape'],
-        }, step=epoch)
+        mlflow.log_metrics(
+            {
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "train_mape": train_metrics["mape"],
+                "train_smape": train_metrics["smape"],
+                "val_mape": val_metrics["mape"],
+                "val_smape": val_metrics["smape"],
+            },
+            step=epoch,
+        )
 
         logger.info(
-            f'Epoch {epoch}/{num_epochs} | '
-            f'Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | '
+            f"Epoch {epoch}/{num_epochs} | "
+            f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | "
             f'Train sMAPE: {train_metrics["smape"]:.2f} | Val sMAPE: {val_metrics["smape"]:.2f}'
         )
 
@@ -56,10 +58,10 @@ def train_model(
 
             torch.save(model.state_dict(), model_save_path)
             mlflow.log_artifact(model_save_path)
-            logger.info(f'Saved best model to {model_save_path} (val_loss={val_loss:.4f})')
+            logger.info(f"Saved best model to {model_save_path} (val_loss={val_loss:.4f})")
 
         if early_stopper.step(val_loss):
-            logger.warning(f'Early stopping triggered after {epoch} epochs.')
+            logger.warning(f"Early stopping triggered after {epoch} epochs.")
             break
 
     return best_val_loss, best_train_metrics, best_val_metrics
@@ -76,5 +78,5 @@ def _collect_metrics(model, dataloader, device, loss_value):
     preds = torch.cat(preds)
     targets = torch.cat(targets)
     metrics = compute_metrics(preds, targets)
-    metrics['loss'] = loss_value
+    metrics["loss"] = loss_value
     return metrics
