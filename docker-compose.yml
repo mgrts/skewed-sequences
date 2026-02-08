@@ -10,7 +10,7 @@
 services:
   # MLflow tracking server (optional, for centralized logging)
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.19.0
+    image: ghcr.io/mlflow/mlflow:v3.9.0
     ports:
       - "5000:5000"
     volumes:

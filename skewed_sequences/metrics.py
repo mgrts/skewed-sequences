@@ -34,6 +34,9 @@ def kappa(x: np.ndarray, n: int) -> float:
 
 
 def estimate_kappa_exponent(X: np.ndarray, n: int):
+    if n <= 1:
+        raise ValueError("n must be greater than 1")
+
     S_1 = X
     S_n = generate_n_sample(X, n)
 
@@ -49,8 +52,11 @@ def estimate_kappa_exponent(X: np.ndarray, n: int):
 
 def compute_dispersion_scaling_series(X: np.ndarray, num_values: int = 100):
     metric_array = np.zeros((num_values, 5))
+    # n=1 is mathematically undefined (division by zero in log ratio),
+    # so the first row is always NaN.  Start computation from n=2.
+    metric_array[0] = np.nan
 
-    for i in range(num_values):
+    for i in range(1, num_values):
         try:
             values = estimate_kappa_exponent(X, i + 1)
             metric_array[i] = values

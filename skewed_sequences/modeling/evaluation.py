@@ -10,7 +10,7 @@ def log_val_predictions(model, val_loader, model_path, num_vis_examples: int = 5
     Log visualizations of predictions for num_vis_examples from the validation set.
     """
     device = next(model.parameters()).device
-    model.load_state_dict(torch.load(model_path))
+    model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
     model.eval()
 
     with torch.no_grad():

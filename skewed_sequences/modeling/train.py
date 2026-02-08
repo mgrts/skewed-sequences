@@ -8,6 +8,7 @@ import typer
 
 from skewed_sequences.config import (
     MODELS_DIR,
+    OUTPUT_LENGTH,
     PROCESSED_DATA_DIR,
     SEED,
     SEQUENCE_LENGTH,
@@ -51,7 +52,7 @@ def main(
     dataset_path: Path = PROCESSED_DATA_DIR / "synthetic_dataset.npy",
     model_type: str = "transformer",
     sequence_length: int = SEQUENCE_LENGTH,
-    output_length: int = 60,
+    output_length: int = OUTPUT_LENGTH,
     embed_dim: int = 64,
     num_heads: int = 4,
     num_layers: int = 4,

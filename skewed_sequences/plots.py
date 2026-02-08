@@ -42,7 +42,9 @@ def synthetic(
 ):
     logger.info("Generating synthetic datasets and creating boxplots...")
 
-    dataset_params = SYNTHETIC_DATA_CONFIGS
+    import copy
+
+    dataset_params = copy.deepcopy(SYNTHETIC_DATA_CONFIGS)
     for i, params in enumerate(dataset_params):
         params["label"] = f"Dataset {i + 1}: {params['experiment_name']}"
 

@@ -145,15 +145,15 @@ class LSTM(nn.Module):
 
     def infer(self, src: Tensor, tgt_len: int) -> Tensor:
         """
-        Autoregressive inference: predict `sequence_length` steps into the future
+        Autoregressive inference: predict ``tgt_len`` steps into the future
         based on the source sequence.
 
         Args:
             src: Tensor of shape (B, src_len, input_dim)
-            sequence_length: number of future steps to predict
+            tgt_len: number of future steps to predict
 
         Returns:
-            Tensor of shape (B, sequence_length, output_dim)
+            Tensor of shape (B, tgt_len, output_dim)
         """
         B = src.size(0)
         device = src.device

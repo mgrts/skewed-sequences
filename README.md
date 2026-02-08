@@ -24,8 +24,9 @@ models. It covers:
 | Tukey bi-weight | `TukeyLoss` |
 
 All custom loss functions extend `torch.nn.Module` with a standard
-`forward(predictions, targets)` interface. The `get_loss_function()` factory
-in `train.py` instantiates the correct loss by name.
+`forward(input, target)` interface (following the PyTorch convention where
+`input` = predictions and `target` = ground-truth).  The `get_loss_function()`
+factory in `train.py` instantiates the correct loss by name.
 
 Experiments run on four **synthetic** SGT datasets (normal, heavy-tailed,
 skewed, heavy-tailed-skewed) and four **real-world** datasets (OWID COVID-19,
@@ -87,8 +88,8 @@ LANL earthquakes, RVR US hospitalisations, Health & Fitness wearable data).
   sklearn, torch, mlflow) are only imported when a sub-command is invoked.
 - **Multi-step prediction** — the system predicts `OUTPUT_LENGTH` (default 5)
   future time steps rather than a single step. This is configured in
-  `config.py` and threaded through all training configs, experiment runners,
-  and model architectures.
+  `config.py` and used consistently across all training configs, experiment
+  runners, CLI defaults, and model architectures.
 - **MLflow tracking** — all training runs are logged to MLflow (file-based
   store under `mlruns/`). The Docker Compose stack can optionally run a
   centralised MLflow tracking server.
@@ -100,7 +101,7 @@ LANL earthquakes, RVR US hospitalisations, Health & Fitness wearable data).
 | Requirement | Version |
 |-------------|---------|
 | Python | 3.11+ |
-| [Poetry](https://python-poetry.org/docs/#installation) | ≥ 1.8 |
+| [Poetry](https://python-poetry.org/docs/#installation) | ≥ 2.0 |
 | Docker *(optional)* | 24+ |
 
 ### Install

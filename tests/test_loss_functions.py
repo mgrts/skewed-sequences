@@ -24,24 +24,24 @@ class TestSGTLoss:
     def test_output_scalar(self, tensors):
         y, y_pred = tensors
         loss_fn = SGTLoss(p=2.0, q=2.0, lam=0.0, sigma=1.0, eps=1e-6)
-        loss = loss_fn(y, y_pred)
+        loss = loss_fn(y_pred, y)
         assert loss.dim() == 0  # scalar
 
     def test_zero_residual(self):
         y = torch.ones(2, 3, 1)
         loss_fn = SGTLoss()
-        loss = loss_fn(y, y.clone())
+        loss = loss_fn(y.clone(), y)
         assert loss.item() >= 0
         assert torch.isfinite(loss)
 
     def test_no_nan_with_default_eps(self, tensors):
         y, y_pred = tensors
-        loss = SGTLoss(eps=1e-6)(y, y_pred)
+        loss = SGTLoss(eps=1e-6)(y_pred, y)
         assert torch.isfinite(loss)
 
     def test_skewed_variant(self, tensors):
         y, y_pred = tensors
-        loss = SGTLoss(lam=0.5, q=5.0, sigma=0.7)(y, y_pred)
+        loss = SGTLoss(lam=0.5, q=5.0, sigma=0.7)(y_pred, y)
         assert torch.isfinite(loss) and loss.item() > 0
 
 

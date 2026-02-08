@@ -12,15 +12,24 @@ class SGTLoss(nn.Module):
         self.sigma = sigma  # sigma must be > 0
         self.eps = eps
 
-    def forward(self, y, y_pred):
+    def forward(self, input, target):
+        """Compute the SGT negative log-likelihood loss.
+
+        Args:
+            input: Model predictions.
+            target: Ground-truth targets.
+
+        The residual follows the SGT PDF convention:
+        ``z = target - input + m`` where *m* is the mean-correction term.
+        """
         p = self.p
         q = self.q
         lam = self.lam
         sigma = self.sigma
         eps = self.eps
 
-        device = y.device
-        dtype = y.dtype
+        device = input.device
+        dtype = input.dtype
 
         B1 = torch.tensor(beta(1.0 / p, q), dtype=dtype, device=device)
         B2 = torch.tensor(beta(2.0 / p, q - 1.0 / p), dtype=dtype, device=device)
@@ -34,7 +43,8 @@ class SGTLoss(nn.Module):
 
         m = lam * v * sigma_t * (2 * (q ** (1.0 / p)) * B2 / B1)
 
-        diff = y - y_pred + m
+        # Residual: target - prediction + m  (SGT PDF convention)
+        diff = target - input + m
         scaled = torch.abs(diff / (sigma_t * v)) ** p
         skew_term = (1 + lam * torch.sign(diff)) ** p
 
