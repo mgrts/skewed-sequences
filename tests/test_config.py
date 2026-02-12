@@ -43,10 +43,15 @@ def test_synthetic_data_configs():
 
 
 def test_training_configs():
-    assert len(TRAINING_CONFIGS) == 15
+    assert len(TRAINING_CONFIGS) == 29
     for cfg in TRAINING_CONFIGS:
         assert "loss_type" in cfg
         assert "output_length" in cfg
         assert cfg["output_length"] == OUTPUT_LENGTH
+        if cfg["loss_type"] == "sgt":
+            assert "sgt_loss_p" in cfg
+            assert "sgt_loss_q" in cfg
+            assert "sgt_loss_sigma" in cfg
+            assert "sgt_loss_lambda" in cfg
     loss_types = {c["loss_type"] for c in TRAINING_CONFIGS}
     assert loss_types == {"sgt", "mse", "mae", "cauchy", "huber", "tukey"}

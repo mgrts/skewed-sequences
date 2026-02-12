@@ -44,6 +44,29 @@ class TestSGTLoss:
         loss = SGTLoss(lam=0.5, q=5.0, sigma=0.7)(y_pred, y)
         assert torch.isfinite(loss) and loss.item() > 0
 
+    @pytest.mark.parametrize(
+        "p,q",
+        [(2.0, 20.0), (2.0, 2.5), (1.5, 5.0), (1.0, 20.0), (1.0, 2.5)],
+    )
+    def test_varying_p_and_q(self, tensors, p, q):
+        """All training-grid (p, q) combinations produce finite positive loss."""
+        y, y_pred = tensors
+        loss = SGTLoss(p=p, q=q, lam=0.0, sigma=1.0)(y_pred, y)
+        assert torch.isfinite(loss) and loss.item() > 0
+
+    def test_larger_q_closer_to_power_law(self):
+        """For large q, SGT(p=2) approaches quadratic (MSE-like) behaviour."""
+        x = torch.tensor([1.0])
+        zero = torch.tensor([0.0])
+        loss_small_q = SGTLoss(p=2.0, q=2.5, sigma=1.0)(zero, x)
+        loss_large_q = SGTLoss(p=2.0, q=20.0, sigma=1.0)(zero, x)
+        # Ratio f(2)/f(1): for MSE it's 4, for Cauchy-like it's < 4
+        x2 = torch.tensor([2.0])
+        ratio_small = SGTLoss(p=2.0, q=2.5, sigma=1.0)(zero, x2) / loss_small_q
+        ratio_large = SGTLoss(p=2.0, q=20.0, sigma=1.0)(zero, x2) / loss_large_q
+        # Large q should have ratio closer to 4 (quadratic)
+        assert ratio_large.item() > ratio_small.item()
+
 
 class TestCauchyLoss:
     def test_zero_residual(self):

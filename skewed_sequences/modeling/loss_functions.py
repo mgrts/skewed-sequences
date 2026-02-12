@@ -15,6 +15,10 @@ class SGTLoss(nn.Module):
     def forward(self, input, target):
         """Compute the SGT negative log-likelihood loss.
 
+        Uses the q^p reparameterization: every occurrence of the original
+        tail-weight parameter is replaced by ``q ** p``, which makes the
+        parameter behave more uniformly across different *p* values.
+
         Args:
             input: Model predictions.
             target: Ground-truth targets.
@@ -31,26 +35,27 @@ class SGTLoss(nn.Module):
         device = input.device
         dtype = input.dtype
 
-        B1 = torch.tensor(beta(1.0 / p, q), dtype=dtype, device=device)
-        B2 = torch.tensor(beta(2.0 / p, q - 1.0 / p), dtype=dtype, device=device)
-        B3 = torch.tensor(beta(3.0 / p, q - 2.0 / p), dtype=dtype, device=device)
+        qp = q**p  # q^p reparameterization
 
-        v_numer = q ** (-1.0 / p)
+        B1 = torch.tensor(beta(1.0 / p, qp), dtype=dtype, device=device)
+        B2 = torch.tensor(beta(2.0 / p, qp - 1.0 / p), dtype=dtype, device=device)
+        B3 = torch.tensor(beta(3.0 / p, qp - 2.0 / p), dtype=dtype, device=device)
+
+        v_numer = q ** (-1.0)
         v_denom = torch.sqrt((1 + 3 * lam**2) * (B3 / B1) - 4 * lam**2 * (B2 / B1) ** 2)
         v = v_numer / (v_denom + eps)
 
         sigma_t = torch.tensor(sigma, dtype=dtype, device=device)
 
-        m = lam * v * sigma_t * (2 * (q ** (1.0 / p)) * B2 / B1)
+        m = lam * v * sigma_t * (2 * q * B2 / B1)
 
         # Residual: target - prediction + m  (SGT PDF convention)
         diff = target - input + m
         scaled = torch.abs(diff / (sigma_t * v)) ** p
         skew_term = (1 + lam * torch.sign(diff)) ** p
 
-        ratio = scaled / (q * skew_term + eps)
-        # Exponent: (1/p + q) per SGT PDF formula, i.e. 1/p plus q
-        loss = (1.0 / p + q) * torch.log(1 + ratio + eps)
+        ratio = scaled / (qp * skew_term + eps)
+        loss = (1.0 / p + qp) * torch.log(1 + ratio + eps)
 
         return loss.mean()
 

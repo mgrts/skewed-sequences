@@ -46,6 +46,7 @@ def main(
                     sgt_loss_lambda=train_config["sgt_loss_lambda"],
                     sgt_loss_q=train_config["sgt_loss_q"],
                     sgt_loss_sigma=train_config["sgt_loss_sigma"],
+                    sgt_loss_p=train_config["sgt_loss_p"],
                     output_length=train_config.get("output_length", 5),
                     experiment_name=experiment_name,
                     seed=experiment_seed,

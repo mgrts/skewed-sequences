@@ -65,6 +65,12 @@ def smooth_sequence(sequence, smoothing_type, kernel_size, sigma, period):
 
 
 class SkewedGeneralizedT:
+    """SGT distribution with q^p reparameterization.
+
+    Every occurrence of the original tail-weight parameter is replaced by
+    ``q ** p``, making the parameter behave more uniformly across *p*.
+    """
+
     def __init__(self, mu=0.0, sigma=1.0, lam=0.0, p=2.0, q=2.0):
         assert -1 < lam < 1, "lam must be in (-1, 1)"
         assert sigma > 0, "sigma must be positive"
@@ -75,35 +81,34 @@ class SkewedGeneralizedT:
         self.lam = lam
         self.p = p
         self.q = q
+        self.qp = q**p  # q^p reparameterization
 
-        # Compute beta functions
-        B1 = beta(1.0 / p, q)
-        B2 = beta(2.0 / p, q - 1.0 / p)
-        B3 = beta(3.0 / p, q - 2.0 / p)
+        # Compute beta functions using q^p
+        B1 = beta(1.0 / p, self.qp)
+        B2 = beta(2.0 / p, self.qp - 1.0 / p)
+        B3 = beta(3.0 / p, self.qp - 2.0 / p)
 
-        # Compute v and m as per the provided formulas
-        self.v = q ** (-1.0 / p) / np.sqrt(
-            (1 + 3 * lam**2) * (B3 / B1) - 4 * lam**2 * (B2 / B1) ** 2
-        )
-        self.m = lam * self.v * sigma * (2 * q ** (1.0 / p) * B2 / B1)
+        # Compute v and m (q^(-1/p) → q^(-1), q^(1/p) → q)
+        self.v = q ** (-1.0) / np.sqrt((1 + 3 * lam**2) * (B3 / B1) - 4 * lam**2 * (B2 / B1) ** 2)
+        self.m = lam * self.v * sigma * (2 * q * B2 / B1)
 
-        # Normalizing constant
-        self.norm_const = p / (2 * self.v * sigma * q ** (1.0 / p) * B1)
+        # Normalizing constant (q^(1/p) → q)
+        self.norm_const = p / (2 * self.v * sigma * q * B1)
 
     def pdf(self, x):
         x = np.asarray(x, dtype=float)
         z = x - self.mu + self.m
         sgn_z = np.sign(z)
-        denom = self.q * (self.sigma * self.v) ** self.p * (1 + self.lam * sgn_z) ** self.p
+        denom = self.qp * (self.sigma * self.v) ** self.p * (1 + self.lam * sgn_z) ** self.p
         bracket = 1 + (np.abs(z) ** self.p) / denom
-        return self.norm_const * bracket ** (-(1 / self.p + self.q))
+        return self.norm_const * bracket ** (-(1 / self.p + self.qp))
 
     def rvs(self, size=1):
         samples = []
         # Use pdf at mu - m as a rough upper bound for rejection sampling
         max_pdf = self.pdf(self.mu - self.m)
         while len(samples) < size:
-            x_candidate = t.rvs(df=2 * self.q, size=1) * self.sigma + self.mu
+            x_candidate = t.rvs(df=2 * self.qp, size=1) * self.sigma + self.mu
             y = np.random.uniform(0, max_pdf)
             if y < self.pdf(x_candidate):
                 samples.append(x_candidate[0])

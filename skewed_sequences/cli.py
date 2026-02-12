@@ -138,6 +138,12 @@ _register_lazy(
     app, "skewed_sequences.visualize_data", name="visualize", help="Visualize dataset samples."
 )
 _register_lazy(app, "skewed_sequences.plots", name="plots", help="Generate boxplot comparisons.")
+_register_lazy(
+    app,
+    "skewed_sequences.visualize_losses",
+    name="visualize-losses",
+    help="Visualize SGT loss interpolation with classical losses.",
+)
 
 # -- Experiments ------------------------------------------------------------
 experiments_app = typer.Typer(name="experiments", help="Run experiment suites.")

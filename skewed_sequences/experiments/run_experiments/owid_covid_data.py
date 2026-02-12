@@ -26,15 +26,13 @@ def main(n_runs: int = N_RUNS):
             )
 
             if loss_type.lower() == "sgt":
-                sgt_lambda = training_config["sgt_loss_lambda"]
-                sgt_q = training_config["sgt_loss_q"]
-                sgt_sigma = training_config["sgt_loss_sigma"]
                 train_main(
                     dataset_path=dataset_path,
                     loss_type=loss_type,
-                    sgt_loss_lambda=sgt_lambda,
-                    sgt_loss_q=sgt_q,
-                    sgt_loss_sigma=sgt_sigma,
+                    sgt_loss_lambda=training_config["sgt_loss_lambda"],
+                    sgt_loss_q=training_config["sgt_loss_q"],
+                    sgt_loss_sigma=training_config["sgt_loss_sigma"],
+                    sgt_loss_p=training_config["sgt_loss_p"],
                     output_length=training_config.get("output_length", 5),
                     experiment_name=experiment_name,
                     seed=experiment_seed,

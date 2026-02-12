@@ -29,10 +29,13 @@ def get_loss_function(
     sgt_loss_lambda: float = 0.0,
     sgt_loss_q: float = 2.0,
     sgt_loss_sigma: float = 1.0,
+    sgt_loss_p: float = 2.0,
 ):
     loss_type = loss_type.lower()
     if loss_type == "sgt":
-        return SGTLoss(eps=1e-6, sigma=sgt_loss_sigma, p=2.0, q=sgt_loss_q, lam=sgt_loss_lambda)
+        return SGTLoss(
+            eps=1e-6, sigma=sgt_loss_sigma, p=sgt_loss_p, q=sgt_loss_q, lam=sgt_loss_lambda
+        )
     elif loss_type == "mse":
         return torch.nn.MSELoss()
     elif loss_type == "mae":
@@ -66,6 +69,7 @@ def main(
     sgt_loss_sigma: float = 1.0,
     sgt_loss_lambda: float = 0.0,
     sgt_loss_q: float = 2.0,
+    sgt_loss_p: float = 2.0,
     experiment_name: str = "Transformer-SGT-synthetic",
 ):
     set_seed(seed)
@@ -115,6 +119,7 @@ def main(
         sgt_loss_lambda=sgt_loss_lambda,
         sgt_loss_q=sgt_loss_q,
         sgt_loss_sigma=sgt_loss_sigma,
+        sgt_loss_p=sgt_loss_p,
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -133,6 +138,7 @@ def main(
                 "sgt_loss_lambda": sgt_loss_lambda,
                 "sgt_loss_q": sgt_loss_q,
                 "sgt_loss_sigma": sgt_loss_sigma,
+                "sgt_loss_p": sgt_loss_p,
                 "input_length": input_length,
                 "output_length": output_length,
                 "embed_dim": embed_dim,
