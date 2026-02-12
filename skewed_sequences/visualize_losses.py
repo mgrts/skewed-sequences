@@ -111,6 +111,7 @@ def main(
     _fig_s_sweep(x_pos, output_dir)
     _fig_interpolation_grid(x_pos, output_dir)
     _fig_sq_interaction(x_pos, output_dir)
+    _fig_tukey_comparison(output_dir)
 
     typer.echo(f"Figures saved to {output_dir}")
 
@@ -379,6 +380,80 @@ def _fig_interpolation_grid(x_pos, output_dir):
     fig.suptitle("SGT interpolation grid ($\\sigma=1$, $\\lambda=0$)", fontsize=13, y=1.01)
     fig.tight_layout()
     fig.savefig(output_dir / "interpolation_grid.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _fig_tukey_comparison(output_dir):
+    """Figure 7: SGT at small q vs Tukey — tail behavior comparison.
+
+    Tukey loss is bounded (saturates at c²/6 for |x| > c), while SGT always
+    grows logarithmically.  At very small q (≈1.2–1.5) the SGT growth is so
+    slow that it approximates Tukey's practical behavior over a wide range.
+
+    Uses a wider x-range (0–15) to clearly show tail saturation / growth.
+    """
+    x_wide = np.linspace(0.01, 15.0, 2000)
+
+    # --- Left panel: raw loss values ---
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
+
+    ax = axes[0]
+    tukey_c = 4.685
+    y_tukey = tukey_loss(x_wide, c=tukey_c)
+    ax.plot(x_wide, y_tukey, color="#9467bd", lw=2.5, label="Tukey (c=4.685)")
+    ax.axhline(tukey_c**2 / 6, color="#9467bd", ls=":", lw=1.0, alpha=0.5)
+
+    q_values = [1.2, 1.3, 1.5, 2.0, 2.5]
+    p, s = 2.0, 1.0
+    cmap = plt.cm.plasma
+    for i, q in enumerate(q_values):
+        y = sgt_loss(x_wide, p, q, s)
+        ax.plot(
+            x_wide,
+            y,
+            color=cmap(i / (len(q_values) - 1)),
+            ls="--",
+            lw=1.8,
+            label=f"SGT(p=2, q={q}, s=1)",
+        )
+
+    ax.set_xlabel("Residual $|x|$")
+    ax.set_ylabel("Loss $f(x)$")
+    ax.set_title("(a) Raw loss: Tukey vs SGT at small $q$")
+    ax.set_ylim(0, 12)
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3)
+
+    # --- Right panel: normalized by f(1) ---
+    ax = axes[1]
+    y_tukey_n = _norm_at_1(lambda t: tukey_loss(t, c=tukey_c), x_wide)
+    ax.plot(x_wide, y_tukey_n, color="#9467bd", lw=2.5, label="Tukey (c=4.685)")
+
+    for i, q in enumerate(q_values):
+        y = _norm_at_1(lambda t, _q=q: sgt_loss(t, p, _q, s), x_wide)
+        ax.plot(
+            x_wide,
+            y,
+            color=cmap(i / (len(q_values) - 1)),
+            ls="--",
+            lw=1.8,
+            label=f"SGT(p=2, q={q}, s=1)",
+        )
+
+    ax.set_xlabel("Residual $|x|$")
+    ax.set_ylabel("Normalized loss $f(x)/f(1)$")
+    ax.set_title("(b) Normalized shape: tail growth comparison")
+    ax.set_ylim(0, 15)
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3)
+
+    fig.suptitle(
+        "Tukey (bounded) vs SGT (log-growth): smaller $q$ $\\rightarrow$ slower tails",
+        fontsize=13,
+        y=1.02,
+    )
+    fig.tight_layout()
+    fig.savefig(output_dir / "tukey_comparison.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
