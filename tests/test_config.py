@@ -29,7 +29,7 @@ def test_path_hierarchy():
 def test_constants():
     assert isinstance(SEED, int) and SEED > 0
     assert SEQUENCE_LENGTH == 300
-    assert OUTPUT_LENGTH == 5
+    assert OUTPUT_LENGTH == 3
     assert N_RUNS >= 1
 
 
@@ -43,7 +43,7 @@ def test_synthetic_data_configs():
 
 
 def test_training_configs():
-    assert len(TRAINING_CONFIGS) == 29
+    assert len(TRAINING_CONFIGS) == 16
     for cfg in TRAINING_CONFIGS:
         assert "loss_type" in cfg
         assert "output_length" in cfg

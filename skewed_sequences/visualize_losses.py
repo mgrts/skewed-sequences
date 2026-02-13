@@ -196,7 +196,7 @@ def _fig_q_sweep(x_pos, output_dir):
     _plot_classical_normed(ax, x_pos, names=["MSE", "Cauchy"])
 
     p, s = 2.0, 1.0
-    q_values = [2.5, 4.0, 7.0, 12.0, 20.0]
+    q_values = [1.3, 2.5, 4.0, 7.0, 12.0, 20.0]
     cmap = plt.cm.plasma
     for i, q in enumerate(q_values):
         y = _norm_at_1(lambda t, _q=q: sgt_loss(t, p, _q, s), x_pos)
@@ -267,12 +267,12 @@ def _fig_sq_interaction(x_pos, output_dir):
     increasing s from 1 to 100 transforms the loss from Cauchy-like to
     near-power-law, demonstrating the interplay the team lead noted.
     """
-    q_values = [2.5, 5.0, 20.0]
+    q_values = [1.3, 2.5, 5.0, 20.0]
     s_values = [1.0, 10.0, 100.0]
     p = 2.0
 
     fig, axes = plt.subplots(
-        len(s_values), len(q_values), figsize=(15, 12), sharex=True, sharey=True
+        len(s_values), len(q_values), figsize=(18, 12), sharex=True, sharey=True
     )
 
     for i, s in enumerate(s_values):
@@ -328,18 +328,41 @@ def _fig_sq_interaction(x_pos, output_dir):
 
 
 def _fig_interpolation_grid(x_pos, output_dir):
-    """Figure 6: Full (p, q) grid at s=1 showing interpolation landscape."""
+    """Figure 6: Full (p, q) grid at s=1 showing interpolation landscape.
+
+    q=1.3 with p=1.0 is invalid (q^p < 2/p), so that cell is left blank.
+    """
     p_values = [1.0, 1.5, 2.0]
-    q_values = [2.5, 5.0, 20.0]
+    q_values = [1.3, 2.5, 5.0, 20.0]
     s = 1.0
 
     fig, axes = plt.subplots(
-        len(p_values), len(q_values), figsize=(15, 12), sharex=True, sharey=True
+        len(p_values), len(q_values), figsize=(18, 12), sharex=True, sharey=True
     )
 
     for i, p in enumerate(p_values):
         for j, q in enumerate(q_values):
             ax = axes[i, j]
+
+            # q=1.3, p=1.0 violates constraint q^p > 2/p
+            if q**p <= 2.0 / p:
+                ax.text(
+                    0.5,
+                    0.5,
+                    f"N/A\n$q^p={q**p:.2f} < 2/p={2/p:.1f}$",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                    fontsize=10,
+                    color="grey",
+                )
+                ax.set_title(f"p={p}, q={q}", fontsize=10, color="grey")
+                ax.grid(True, alpha=0.3)
+                if i == len(p_values) - 1:
+                    ax.set_xlabel("$|x|$")
+                if j == 0:
+                    ax.set_ylabel("Normalized loss")
+                continue
 
             for name, spec in CLASSICAL.items():
                 y = _norm_at_1(spec["fn"], x_pos)
