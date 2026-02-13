@@ -42,6 +42,7 @@ from skewed_sequences.data.synthetic.generate_data import (
     SkewedGeneralizedT,
     smooth_sequence,
 )
+from skewed_sequences.style import COLORS, apply_style
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -191,15 +192,14 @@ def _save_individual_samples(
 
     for rank, idx in enumerate(indices, start=1):
         fig, ax = plt.subplots(figsize=(12, 4))
-        ax.plot(data[idx], linewidth=0.9, color="#1f77b4")
+        ax.plot(data[idx], linewidth=0.9, color=COLORS["primary"])
         ax.set_title(f"{title_prefix} — sample {rank:03d}", fontsize=11)
         ax.set_xlabel("Timestep")
         ax.set_ylabel("Value")
-        ax.grid(True, alpha=0.3)
         fig.tight_layout()
 
         path = output_dir / f"sample_{rank:03d}.png"
-        fig.savefig(path, dpi=150)
+        fig.savefig(path)
         plt.close(fig)
 
     logger.info(f"  {n_to_plot} images → {output_dir}")
@@ -224,6 +224,7 @@ def synthetic(
 
         <output_dir>/<data_type>/sample_001.png
     """
+    apply_style()
     logger.info(
         f"Generating sample visualizations for {len(SYNTHETIC_DATA_CONFIGS)} "
         f"synthetic configs (default variant)"
@@ -271,6 +272,7 @@ def real(
 
         <output_dir>/<dataset_name>/sample_001.png
     """
+    apply_style()
     dataset_specs = [
         {
             "name": "lanl_earthquake",
@@ -330,6 +332,7 @@ def variants(
 
         reports/figures/dataset_samples/synthetic/exp_default/normal/sample_001.png
     """
+    apply_style()
     logger.info(
         f"Generating {len(SMOOTHING_VARIANTS)} variants × "
         f"{len(SYNTHETIC_DATA_CONFIGS)} data configs × "
@@ -415,7 +418,7 @@ def variants(
                 ax.plot(data[idx], alpha=0.8, linewidth=0.8)
             ax.set_title(variant["label"], fontsize=10)
             ax.set_ylabel("Value")
-            ax.grid(True, alpha=0.3)
+            ax.grid(True)
 
         axes[-1].set_xlabel("Timestep")
         fig.suptitle(
@@ -425,7 +428,7 @@ def variants(
         fig.tight_layout()
 
         summary_path = output_dir / f"summary_{ds_name}.png"
-        fig.savefig(summary_path, dpi=150)
+        fig.savefig(summary_path)
         plt.close(fig)
         logger.success(f"Summary grid saved: {summary_path}")
 

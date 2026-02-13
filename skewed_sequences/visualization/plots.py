@@ -9,26 +9,26 @@ import typer
 from skewed_sequences.config import FIGURES_DIR, PROCESSED_DATA_DIR, SYNTHETIC_DATA_CONFIGS
 from skewed_sequences.data.rvr_us.dataset import main as create_rvr_dataset_main
 from skewed_sequences.data.synthetic.generate_data import main as generate_data_main
+from skewed_sequences.style import PALETTE_SEQ, apply_style
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
 def create_boxplot(data_dict: dict, output_path: Path, title: str, xlim: int):
     plt.figure(figsize=(15, 9))
-    sns.boxplot(data=list(data_dict.values()), orient="h")
+    sns.boxplot(data=list(data_dict.values()), orient="h", palette=PALETTE_SEQ)
 
     plt.yticks(ticks=range(len(data_dict)), labels=list(data_dict.keys()))
     plt.title(title)
     plt.xlabel("Values")
     plt.ylabel("Distribution")
-    plt.grid(axis="x", linestyle="--", alpha=0.7)
     sns.despine(trim=True)
 
     plt.xticks(ticks=np.arange(-xlim, xlim + 1, 1))
     plt.xlim(-xlim, xlim)
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300)
+    plt.savefig(output_path)
     plt.close()
 
     logger.success(f"Boxplots saved to {output_path}")
@@ -40,6 +40,7 @@ def synthetic(
     sample_size: int = 1000,
     xlim: int = 5,
 ):
+    apply_style()
     logger.info("Generating synthetic datasets and creating boxplots...")
 
     import copy
@@ -70,6 +71,7 @@ def real(
     output_path: Path = FIGURES_DIR / "real_dataset_boxplots.png",
     xlim: int = 5,
 ):
+    apply_style()
     logger.info("Creating real-world datasets and generating boxplots...")
 
     dataset_specs = [

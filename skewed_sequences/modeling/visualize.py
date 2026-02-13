@@ -1,94 +1,157 @@
+from typing import List, Optional, Tuple
+
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
+
+from skewed_sequences.style import COLORS, apply_style
 
 
-def plot_time_series(time_series):
-    """
-    Plots the given time series.
-
-    Parameters:
-        time_series (np.ndarray): The time series to plot.
-    """
-    plt.figure(figsize=(12, 6))
-    plt.plot(time_series, label="Non-Stationary Time Series with Varying Variance")
-    plt.title("Non-Stationary Time Series Generation")
-    plt.xlabel("Time")
-    plt.ylabel("Value")
-    plt.legend()
-    plt.grid(True)
-    plt.show()
-
-
-def visualize_prediction(
-    src: torch.Tensor,
-    tgt: torch.Tensor,
-    pred: torch.Tensor,
-    pred_infer: torch.Tensor,
-    idx=0,
+def visualize_sliding_window_prediction(
+    sequence: np.ndarray,
+    dense_agg: Optional[dict],
+    tiled_predictions: Optional[List[Tuple[int, np.ndarray]]],
+    context_len: int,
+    output_len: int,
     zoom_context: int = 20,
-):
-    """Visualizes a given sample including predictions.
-
-    When the prediction horizon is short relative to the input (tgt_len < 10%
-    of src_len), an additional zoomed subplot is added showing only the last
-    ``zoom_context`` input steps plus the prediction region.
+) -> plt.Figure:
+    """Visualize dense and tiled sliding-window predictions over a full sequence.
 
     Args:
-        src: source sequence [bs, src_seq_len, num_features]
-        tgt: target sequence [bs, tgt_seq_len, num_features]
-        pred: prediction of the model [bs, tgt_seq_len, num_features]
-        pred_infer: prediction obtained by running inference
-            [bs, tgt_seq_len, num_features]
-        idx: batch index to visualize
-        zoom_context: number of input timesteps to show before prediction
-            in the zoomed subplot
-    """
-    src_len = src.shape[1]
-    tgt_len = tgt.shape[1]
-    x = np.arange(src_len + tgt_len)
+        sequence: Ground-truth values, shape ``(T,)`` or ``(T, 1)``.
+        dense_agg: Dict with keys ``"mean"``, ``"min"``, ``"max"`` — arrays
+            of shape ``(T,)`` produced by :func:`aggregate_dense_predictions`.
+            ``None`` to skip the dense overlay.
+        tiled_predictions: List of ``(start_idx, pred_array)`` tuples from
+            stride=output_len inference.  ``None`` to skip.
+        context_len: Number of context time-steps (drawn as a vertical line).
+        output_len: Prediction horizon length.
+        zoom_context: How many context steps to show before the prediction
+            region in the optional zoom panel.
 
-    need_zoom = tgt_len < 0.1 * src_len
+    Returns:
+        A :class:`matplotlib.figure.Figure`.
+    """
+    apply_style()
+
+    seq = sequence.squeeze()
+    T = len(seq)
+
+    pred_start = context_len
+    pred_len = T - context_len
+    need_zoom = pred_len < 0.15 * T
 
     if need_zoom:
         fig, (ax_full, ax_zoom) = plt.subplots(
             1,
             2,
-            figsize=(24, 8),
+            figsize=(22, 7),
             gridspec_kw={"width_ratios": [2, 1]},
         )
     else:
-        fig, ax_full = plt.subplots(figsize=(20, 10))
+        fig, ax_full = plt.subplots(figsize=(18, 7))
+        ax_zoom = None
 
-    # --- Full view ---
-    ax_full.plot(x[:src_len], src[idx].cpu().detach(), "bo-", markersize=1, label="src")
-    ax_full.plot(x[src_len:], tgt[idx].cpu().detach(), "go-", markersize=2, label="tgt")
-    ax_full.plot(x[src_len:], pred[idx].cpu().detach(), "ro-", markersize=2, label="pred")
-    ax_full.plot(
-        x[src_len:], pred_infer[idx].cpu().detach(), "yo-", markersize=2, label="pred_infer"
+    x = np.arange(T)
+
+    # Ground truth
+    ax_full.plot(x, seq, color=COLORS["ground_truth"], linewidth=1.0, label="Ground truth")
+
+    # Dense: mean line + min/max envelope
+    if dense_agg is not None:
+        mean = dense_agg["mean"]
+        mn = dense_agg["min"]
+        mx = dense_agg["max"]
+        valid = ~np.isnan(mean)
+        ax_full.plot(
+            x[valid],
+            mean[valid],
+            color=COLORS["dense_mean"],
+            linewidth=1.2,
+            label="Dense mean",
+        )
+        ax_full.fill_between(
+            x[valid],
+            mn[valid],
+            mx[valid],
+            color=COLORS["dense_band"],
+            alpha=0.25,
+            label="Dense min–max",
+        )
+
+    # Tiled blocks
+    if tiled_predictions is not None:
+        for i, (start, pred) in enumerate(tiled_predictions):
+            pred_1d = pred.squeeze()
+            xs = np.arange(start, start + len(pred_1d))
+            label = "Tiled prediction" if i == 0 else None
+            ax_full.plot(xs, pred_1d, color=COLORS["tiled"], linewidth=1.0, label=label)
+
+    # Context boundary
+    ax_full.axvline(
+        pred_start,
+        color=COLORS["context_boundary"],
+        linestyle="--",
+        linewidth=0.8,
+        label="Context boundary",
     )
-    ax_full.set_title("Full sequence")
-    ax_full.legend()
 
-    if need_zoom:
-        # --- Zoomed view on prediction region ---
-        zoom_start = max(0, src_len - zoom_context)
+    ax_full.set_title("Sliding-window prediction")
+    ax_full.set_xlabel("Timestep")
+    ax_full.set_ylabel("Value")
+    ax_full.legend(fontsize=8)
+
+    # Zoom panel
+    if ax_zoom is not None:
+        zoom_start = max(0, pred_start - zoom_context)
         ax_zoom.plot(
-            x[zoom_start:src_len],
-            src[idx, zoom_start:src_len].cpu().detach(),
-            "bo-",
-            label="src (context)",
+            x[zoom_start:],
+            seq[zoom_start:],
+            color=COLORS["ground_truth"],
+            linewidth=1.0,
+            label="Ground truth",
         )
-        ax_zoom.plot(x[src_len:], tgt[idx].cpu().detach(), "go-", label="tgt")
-        ax_zoom.plot(x[src_len:], pred[idx].cpu().detach(), "ro-", label="pred")
-        ax_zoom.plot(x[src_len:], pred_infer[idx].cpu().detach(), "yo-", label="pred_infer")
+        if dense_agg is not None:
+            valid_z = ~np.isnan(mean[zoom_start:])
+            xz = x[zoom_start:]
+            ax_zoom.plot(
+                xz[valid_z],
+                mean[zoom_start:][valid_z],
+                color=COLORS["dense_mean"],
+                linewidth=1.2,
+                label="Dense mean",
+            )
+            ax_zoom.fill_between(
+                xz[valid_z],
+                mn[zoom_start:][valid_z],
+                mx[zoom_start:][valid_z],
+                color=COLORS["dense_band"],
+                alpha=0.25,
+            )
+        if tiled_predictions is not None:
+            for i, (start, pred) in enumerate(tiled_predictions):
+                pred_1d = pred.squeeze()
+                xs = np.arange(start, start + len(pred_1d))
+                mask = xs >= zoom_start
+                if mask.any():
+                    ax_zoom.plot(
+                        xs[mask],
+                        pred_1d[mask],
+                        color=COLORS["tiled"],
+                        linewidth=1.0,
+                    )
+        ax_zoom.axvline(
+            pred_start,
+            color=COLORS["context_boundary"],
+            linestyle="--",
+            linewidth=0.8,
+        )
         ax_zoom.set_title(
-            f"Prediction region (last {zoom_context} input + {tgt_len} output steps)"
+            f"Zoom: last {zoom_context} context + prediction region",
         )
-        ax_zoom.legend()
+        ax_zoom.set_xlabel("Timestep")
+        ax_zoom.legend(fontsize=8)
 
-        # Add a shaded region on the full plot to indicate the zoomed area
-        ax_full.axvspan(zoom_start, src_len + tgt_len, alpha=0.1, color="orange")
+        ax_full.axvspan(zoom_start, T, alpha=0.07, color="orange")
 
     fig.tight_layout()
     return fig

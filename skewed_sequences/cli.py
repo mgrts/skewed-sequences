@@ -135,12 +135,20 @@ _register_lazy(app, "skewed_sequences.modeling.train", name="train", help="Train
 
 # -- Visualization ----------------------------------------------------------
 _register_lazy(
-    app, "skewed_sequences.visualize_data", name="visualize", help="Visualize dataset samples."
+    app,
+    "skewed_sequences.visualization.visualize_data",
+    name="visualize",
+    help="Visualize dataset samples.",
 )
-_register_lazy(app, "skewed_sequences.plots", name="plots", help="Generate boxplot comparisons.")
 _register_lazy(
     app,
-    "skewed_sequences.visualize_losses",
+    "skewed_sequences.visualization.plots",
+    name="plots",
+    help="Generate boxplot comparisons.",
+)
+_register_lazy(
+    app,
+    "skewed_sequences.visualization.visualize_losses",
     name="visualize-losses",
     help="Visualize SGT loss interpolation with classical losses.",
 )

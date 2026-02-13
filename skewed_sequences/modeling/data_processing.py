@@ -55,7 +55,7 @@ def create_dataloaders(
     test_split: float,
     stride: int = 1,
     seed: int = 42,
-) -> Tuple[DataLoader, DataLoader]:
+) -> Tuple[DataLoader, DataLoader, np.ndarray]:
     # Split at the sequence level to prevent leakage
     train_data, val_data = train_test_split(data, test_size=test_split, random_state=seed)
 
@@ -69,4 +69,4 @@ def create_dataloaders(
         batch_size=batch_size,
     )
 
-    return train_loader, val_loader
+    return train_loader, val_loader, val_data

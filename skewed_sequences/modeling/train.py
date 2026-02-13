@@ -91,7 +91,7 @@ def main(
         f"exceeds sequence length ({data.shape[1]})"
     )
 
-    train_loader, val_loader = create_dataloaders(
+    train_loader, val_loader, val_data_raw = create_dataloaders(
         data=data,
         context_len=context_length,
         output_len=output_length,
@@ -178,7 +178,13 @@ def main(
             }
         )
 
-        log_val_predictions(model, val_loader, model_path=model_save_path)
+        log_val_predictions(
+            model,
+            val_data_raw=val_data_raw,
+            model_path=model_save_path,
+            context_len=context_length,
+            output_len=output_length,
+        )
 
         logger.success("Training complete.")
 

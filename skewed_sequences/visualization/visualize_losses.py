@@ -15,6 +15,7 @@ from scipy.special import beta as beta_func
 import typer
 
 from skewed_sequences.config import FIGURES_DIR
+from skewed_sequences.style import PALETTE_SEQ, apply_style
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -63,11 +64,11 @@ def tukey_loss(x, c=4.685):
 
 
 CLASSICAL = {
-    "MSE": {"fn": mse_loss, "color": "#1f77b4", "ls": "-"},
-    "MAE": {"fn": mae_loss, "color": "#ff7f0e", "ls": "-"},
-    "Huber": {"fn": lambda x: huber_loss(x, delta=1.0), "color": "#2ca02c", "ls": "-"},
-    "Cauchy": {"fn": lambda x: cauchy_loss(x, gamma=2.0), "color": "#d62728", "ls": "-"},
-    "Tukey": {"fn": lambda x: tukey_loss(x, c=4.685), "color": "#9467bd", "ls": "-"},
+    "MSE": {"fn": mse_loss, "color": PALETTE_SEQ[0], "ls": "-"},
+    "MAE": {"fn": mae_loss, "color": PALETTE_SEQ[1], "ls": "-"},
+    "Huber": {"fn": lambda x: huber_loss(x, delta=1.0), "color": PALETTE_SEQ[2], "ls": "-"},
+    "Cauchy": {"fn": lambda x: cauchy_loss(x, gamma=2.0), "color": PALETTE_SEQ[3], "ls": "-"},
+    "Tukey": {"fn": lambda x: tukey_loss(x, c=4.685), "color": PALETTE_SEQ[4], "ls": "-"},
 }
 
 
@@ -101,6 +102,7 @@ def main(
     n_points: int = 1000,
 ):
     """Generate all loss comparison figures."""
+    apply_style()
     output_dir.mkdir(parents=True, exist_ok=True)
     x = np.linspace(-x_max, x_max, n_points)
     x_pos = np.linspace(0.01, x_max, n_points // 2)  # positive half for normalized
@@ -140,7 +142,7 @@ def _fig_overview(x, x_pos, output_dir):
     ax.set_title("(a) Raw scale")
     ax.set_ylim(0, 30)
     ax.legend(fontsize=7, ncol=2)
-    ax.grid(True, alpha=0.3)
+    ax.grid(True)
 
     # --- Right panel: normalized (f(x)/f(1)) ---
     ax = axes[1]
@@ -153,10 +155,10 @@ def _fig_overview(x, x_pos, output_dir):
     ax.set_title("(b) Normalized (shape comparison)")
     ax.set_ylim(0, 30)
     ax.legend(fontsize=7, ncol=2)
-    ax.grid(True, alpha=0.3)
+    ax.grid(True)
 
     fig.tight_layout()
-    fig.savefig(output_dir / "overview.png", dpi=150, bbox_inches="tight")
+    fig.savefig(output_dir / "overview.png")
     plt.close(fig)
 
 
@@ -184,9 +186,9 @@ def _fig_p_sweep(x_pos, output_dir):
     ax.set_title("Effect of $p$ at $q=20,\\; s=1$: L1 $\\leftrightarrow$ L2 interpolation")
     ax.set_ylim(0, 30)
     ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
+    ax.grid(True)
     fig.tight_layout()
-    fig.savefig(output_dir / "p_sweep.png", dpi=150, bbox_inches="tight")
+    fig.savefig(output_dir / "p_sweep.png")
     plt.close(fig)
 
 
@@ -214,9 +216,9 @@ def _fig_q_sweep(x_pos, output_dir):
     ax.set_title("Effect of $q$ at $p=2,\\; s=1$: quadratic $\\leftrightarrow$ logarithmic")
     ax.set_ylim(0, 30)
     ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
+    ax.grid(True)
     fig.tight_layout()
-    fig.savefig(output_dir / "q_sweep.png", dpi=150, bbox_inches="tight")
+    fig.savefig(output_dir / "q_sweep.png")
     plt.close(fig)
 
 
@@ -247,7 +249,7 @@ def _fig_s_sweep(x_pos, output_dir):
         ax.set_title(title, fontsize=10)
         ax.set_ylim(0, 30)
         ax.legend(fontsize=8)
-        ax.grid(True, alpha=0.3)
+        ax.grid(True)
 
     axes[0].set_ylabel("Normalized loss")
     fig.suptitle(
@@ -256,7 +258,7 @@ def _fig_s_sweep(x_pos, output_dir):
         y=1.02,
     )
     fig.tight_layout()
-    fig.savefig(output_dir / "s_sweep.png", dpi=150, bbox_inches="tight")
+    fig.savefig(output_dir / "s_sweep.png")
     plt.close(fig)
 
 
@@ -311,7 +313,7 @@ def _fig_sq_interaction(x_pos, output_dir):
             ax.set_title(f"q={q}, s={s}", fontsize=10)
             ax.set_ylim(0, 15)
             ax.legend(fontsize=7)
-            ax.grid(True, alpha=0.3)
+            ax.grid(True)
             if i == len(s_values) - 1:
                 ax.set_xlabel("$|x|$")
             if j == 0:
@@ -323,7 +325,7 @@ def _fig_sq_interaction(x_pos, output_dir):
         y=1.01,
     )
     fig.tight_layout()
-    fig.savefig(output_dir / "sq_interaction.png", dpi=150, bbox_inches="tight")
+    fig.savefig(output_dir / "sq_interaction.png")
     plt.close(fig)
 
 
@@ -357,7 +359,7 @@ def _fig_interpolation_grid(x_pos, output_dir):
                     color="grey",
                 )
                 ax.set_title(f"p={p}, q={q}", fontsize=10, color="grey")
-                ax.grid(True, alpha=0.3)
+                ax.grid(True)
                 if i == len(p_values) - 1:
                     ax.set_xlabel("$|x|$")
                 if j == 0:
@@ -394,7 +396,7 @@ def _fig_interpolation_grid(x_pos, output_dir):
             ax.set_title(f"p={p}, q={q}", fontsize=10)
             ax.set_ylim(0, 15)
             ax.legend(fontsize=7)
-            ax.grid(True, alpha=0.3)
+            ax.grid(True)
             if i == len(p_values) - 1:
                 ax.set_xlabel("$|x|$")
             if j == 0:
@@ -402,7 +404,7 @@ def _fig_interpolation_grid(x_pos, output_dir):
 
     fig.suptitle("SGT interpolation grid ($\\sigma=1$, $\\lambda=0$)", fontsize=13, y=1.01)
     fig.tight_layout()
-    fig.savefig(output_dir / "interpolation_grid.png", dpi=150, bbox_inches="tight")
+    fig.savefig(output_dir / "interpolation_grid.png")
     plt.close(fig)
 
 
@@ -445,7 +447,7 @@ def _fig_tukey_comparison(output_dir):
     ax.set_title("(a) Raw loss: Tukey vs SGT at small $q$")
     ax.set_ylim(0, 12)
     ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
+    ax.grid(True)
 
     # --- Right panel: normalized by f(1) ---
     ax = axes[1]
@@ -468,7 +470,7 @@ def _fig_tukey_comparison(output_dir):
     ax.set_title("(b) Normalized shape: tail growth comparison")
     ax.set_ylim(0, 15)
     ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
+    ax.grid(True)
 
     fig.suptitle(
         "Tukey (bounded) vs SGT (log-growth): smaller $q$ $\\rightarrow$ slower tails",
@@ -476,7 +478,7 @@ def _fig_tukey_comparison(output_dir):
         y=1.02,
     )
     fig.tight_layout()
-    fig.savefig(output_dir / "tukey_comparison.png", dpi=150, bbox_inches="tight")
+    fig.savefig(output_dir / "tukey_comparison.png")
     plt.close(fig)
 
 

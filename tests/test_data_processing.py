@@ -57,7 +57,7 @@ class TestCreateDataloaders:
         n_seqs, T, feats = 100, 50, 1
         context_len, output_len = 20, 5
         data = np.random.randn(n_seqs, T, feats).astype(np.float32)
-        train_dl, val_dl = create_dataloaders(
+        train_dl, val_dl, _ = create_dataloaders(
             data,
             context_len=context_len,
             output_len=output_len,
@@ -71,7 +71,7 @@ class TestCreateDataloaders:
 
     def test_batch_shapes(self):
         data = np.random.randn(50, 40, 1).astype(np.float32)
-        train_dl, _ = create_dataloaders(
+        train_dl, _, _ = create_dataloaders(
             data,
             context_len=20,
             output_len=5,
