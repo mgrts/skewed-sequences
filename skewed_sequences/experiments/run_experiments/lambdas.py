@@ -1,6 +1,12 @@
 import typer
 
-from skewed_sequences.config import OUTPUT_LENGTH, PROCESSED_DATA_DIR, SGT_LOSS_LAMBDAS
+from skewed_sequences.config import (
+    CONTEXT_LENGTH,
+    OUTPUT_LENGTH,
+    PROCESSED_DATA_DIR,
+    SGT_LOSS_LAMBDAS,
+    STRIDE,
+)
 from skewed_sequences.modeling.train import main as train_main
 
 
@@ -17,6 +23,8 @@ def main():
             loss_type="sgt",
             sgt_loss_lambda=sgt_lambda,
             output_length=OUTPUT_LENGTH,
+            context_length=CONTEXT_LENGTH,
+            stride=STRIDE,
         )
         typer.echo(f"Completed training with sgt_lambda = {sgt_lambda}\n")
 

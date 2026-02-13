@@ -2,7 +2,13 @@ import random
 
 import typer
 
-from skewed_sequences.config import N_RUNS, PROCESSED_DATA_DIR, TRAINING_CONFIGS
+from skewed_sequences.config import (
+    CONTEXT_LENGTH,
+    N_RUNS,
+    PROCESSED_DATA_DIR,
+    STRIDE,
+    TRAINING_CONFIGS,
+)
 from skewed_sequences.modeling.train import main as train_main
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
@@ -34,6 +40,8 @@ def main(n_runs: int = N_RUNS):
                     sgt_loss_sigma=training_config["sgt_loss_sigma"],
                     sgt_loss_p=training_config["sgt_loss_p"],
                     output_length=training_config.get("output_length", 5),
+                    context_length=CONTEXT_LENGTH,
+                    stride=STRIDE,
                     experiment_name=experiment_name,
                     seed=experiment_seed,
                 )
@@ -42,6 +50,8 @@ def main(n_runs: int = N_RUNS):
                     dataset_path=dataset_path,
                     loss_type=loss_type,
                     output_length=training_config.get("output_length", 5),
+                    context_length=CONTEXT_LENGTH,
+                    stride=STRIDE,
                     experiment_name=experiment_name,
                     seed=experiment_seed,
                 )

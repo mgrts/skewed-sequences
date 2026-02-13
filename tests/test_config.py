@@ -1,6 +1,7 @@
 """Tests for skewed_sequences.config — paths and constants."""
 
 from skewed_sequences.config import (
+    CONTEXT_LENGTH,
     DATA_DIR,
     FIGURES_DIR,
     MODELS_DIR,
@@ -10,6 +11,7 @@ from skewed_sequences.config import (
     PROJ_ROOT,
     SEED,
     SEQUENCE_LENGTH,
+    STRIDE,
     SYNTHETIC_DATA_CONFIGS,
     TRAINING_CONFIGS,
 )
@@ -29,6 +31,8 @@ def test_path_hierarchy():
 def test_constants():
     assert isinstance(SEED, int) and SEED > 0
     assert SEQUENCE_LENGTH == 300
+    assert CONTEXT_LENGTH == 200
+    assert STRIDE == 1
     assert OUTPUT_LENGTH == 3
     assert N_RUNS >= 1
 

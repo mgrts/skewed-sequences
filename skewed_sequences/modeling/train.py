@@ -7,11 +7,12 @@ import torch
 import typer
 
 from skewed_sequences.config import (
+    CONTEXT_LENGTH,
     MODELS_DIR,
     OUTPUT_LENGTH,
     PROCESSED_DATA_DIR,
     SEED,
-    SEQUENCE_LENGTH,
+    STRIDE,
     TRACKING_URI,
 )
 from skewed_sequences.modeling.data_processing import create_dataloaders
@@ -54,8 +55,9 @@ def get_loss_function(
 def main(
     dataset_path: Path = PROCESSED_DATA_DIR / "synthetic_dataset.npy",
     model_type: str = "transformer",
-    sequence_length: int = SEQUENCE_LENGTH,
+    context_length: int = CONTEXT_LENGTH,
     output_length: int = OUTPUT_LENGTH,
+    stride: int = STRIDE,
     embed_dim: int = 64,
     num_heads: int = 4,
     num_layers: int = 4,
@@ -79,20 +81,23 @@ def main(
         else "mps" if torch.backends.mps.is_available() else "cpu"
     )
 
-    assert output_length < sequence_length, "Output length must be less than sequence length"
-
     logger.info(f"Using device: {device}")
     logger.info("Loading data...")
 
     data = np.load(dataset_path)
-    input_length = sequence_length - output_length
+
+    assert context_length + output_length <= data.shape[1], (
+        f"context_length ({context_length}) + output_length ({output_length}) "
+        f"exceeds sequence length ({data.shape[1]})"
+    )
 
     train_loader, val_loader = create_dataloaders(
         data=data,
-        input_len=input_length,
+        context_len=context_length,
         output_len=output_length,
         batch_size=batch_size,
         test_split=test_split,
+        stride=stride,
         seed=seed,
     )
 
@@ -139,8 +144,9 @@ def main(
                 "sgt_loss_q": sgt_loss_q,
                 "sgt_loss_sigma": sgt_loss_sigma,
                 "sgt_loss_p": sgt_loss_p,
-                "input_length": input_length,
+                "context_length": context_length,
                 "output_length": output_length,
+                "stride": stride,
                 "embed_dim": embed_dim,
                 "num_heads": num_heads,
                 "num_layers": num_layers,

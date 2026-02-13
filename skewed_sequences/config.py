@@ -28,6 +28,8 @@ TRACKING_URI = PROJ_ROOT / "mlruns"
 SEED = 927
 
 SEQUENCE_LENGTH = 300
+CONTEXT_LENGTH = 200
+STRIDE = 1
 
 # If tqdm is installed, configure loguru with tqdm.write
 # https://github.com/Delgan/loguru/issues/135
