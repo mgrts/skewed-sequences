@@ -19,6 +19,10 @@ app = typer.Typer(pretty_exceptions_show_locals=False)
 def main(
     n_runs: int = N_RUNS,
     dataset_name: str = "lanl_sequences.npy",
+    batch_size: int = 32,
+    num_epochs: int = 100,
+    early_stopping_patience: int = 20,
+    num_workers: int = 0,
 ):
     """
     Run multiple training experiments on the LANL dataset.
@@ -54,6 +58,10 @@ def main(
                     stride=STRIDE,
                     experiment_name=experiment_name,
                     seed=experiment_seed,
+                    batch_size=batch_size,
+                    num_epochs=num_epochs,
+                    early_stopping_patience=early_stopping_patience,
+                    num_workers=num_workers,
                 )
             else:
                 train_main(
@@ -64,6 +72,10 @@ def main(
                     stride=STRIDE,
                     experiment_name=experiment_name,
                     seed=experiment_seed,
+                    batch_size=batch_size,
+                    num_epochs=num_epochs,
+                    early_stopping_patience=early_stopping_patience,
+                    num_workers=num_workers,
                 )
 
             typer.echo(f"==== Completed training: {experiment_name} ====\n")

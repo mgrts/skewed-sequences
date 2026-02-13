@@ -67,6 +67,7 @@ def main(
     test_split: float = 0.1,
     seed: int = SEED,
     early_stopping_patience: int = 20,
+    num_workers: int = 0,
     loss_type: str = "sgt",
     sgt_loss_sigma: float = 1.0,
     sgt_loss_lambda: float = 0.0,
@@ -99,6 +100,7 @@ def main(
         test_split=test_split,
         stride=stride,
         seed=seed,
+        num_workers=num_workers,
     )
 
     if model_type == "transformer":

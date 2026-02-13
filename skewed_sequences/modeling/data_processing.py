@@ -55,6 +55,7 @@ def create_dataloaders(
     test_split: float,
     stride: int = 1,
     seed: int = 42,
+    num_workers: int = 0,
 ) -> Tuple[DataLoader, DataLoader, np.ndarray]:
     # Split at the sequence level to prevent leakage
     train_data, val_data = train_test_split(data, test_size=test_split, random_state=seed)
@@ -63,10 +64,12 @@ def create_dataloaders(
         SlidingWindowDataset(train_data, context_len, output_len, stride),
         batch_size=batch_size,
         shuffle=True,
+        num_workers=num_workers,
     )
     val_loader = DataLoader(
         SlidingWindowDataset(val_data, context_len, output_len, stride),
         batch_size=batch_size,
+        num_workers=num_workers,
     )
 
     return train_loader, val_loader, val_data

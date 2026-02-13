@@ -10,7 +10,12 @@ from skewed_sequences.config import (
 from skewed_sequences.modeling.train import main as train_main
 
 
-def main():
+def main(
+    batch_size: int = 32,
+    num_epochs: int = 100,
+    early_stopping_patience: int = 20,
+    num_workers: int = 0,
+):
     """
     Runs training experiments for each value in SGT_LOSS_LAMBDAS.
     """
@@ -25,6 +30,10 @@ def main():
             output_length=OUTPUT_LENGTH,
             context_length=CONTEXT_LENGTH,
             stride=STRIDE,
+            batch_size=batch_size,
+            num_epochs=num_epochs,
+            early_stopping_patience=early_stopping_patience,
+            num_workers=num_workers,
         )
         typer.echo(f"Completed training with sgt_lambda = {sgt_lambda}\n")
 
