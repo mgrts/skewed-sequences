@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "skewed-sequences"
-version = "1.0.0"
+version = "1.2.0"
 description = "Skewed sequences loss function analysis for transformer neural networks"
 authors = ["Mikhail Gritskikh"]
 readme = "README.md"

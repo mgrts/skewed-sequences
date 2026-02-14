@@ -72,7 +72,7 @@ LANL earthquakes, RVR US hospitalisations, Health & Fitness wearable data).
 │       ├── calculate_metrics.py
 │       └── calculate_dispersion_scaling.py
 │
-├── tests/                  <- Pytest test suite (63 tests)
+├── tests/                  <- Pytest test suite (77 tests)
 ├── data/                   <- Raw / interim / processed / external data
 ├── models/                 <- Saved model artefacts
 ├── mlruns/                 <- MLflow tracking store
@@ -86,10 +86,14 @@ LANL earthquakes, RVR US hospitalisations, Health & Fitness wearable data).
 - **Lazy CLI imports** — `cli.py` uses a `_LazyTyper` proxy pattern so that
   `poetry run skseq --help` responds instantly. Heavy dependencies (scipy,
   sklearn, torch, mlflow) are only imported when a sub-command is invoked.
-- **Multi-step prediction** — the system predicts `OUTPUT_LENGTH` (default 5)
+- **Multi-step prediction** — the system predicts `OUTPUT_LENGTH` (default 3)
   future time steps rather than a single step. This is configured in
   `config.py` and used consistently across all training configs, experiment
   runners, CLI defaults, and model architectures.
+- **Optimised data pipeline** — training data is pre-tensorised once on dataset
+  creation (zero-copy slicing in `__getitem__`), metrics are collected inline
+  during train/eval passes (no redundant data iterations), and DataLoaders use
+  `pin_memory` and `persistent_workers` for GPU transfer acceleration.
 - **MLflow tracking** — all training runs are logged to MLflow (file-based
   store under `mlruns/`). The Docker Compose stack can optionally run a
   centralised MLflow tracking server.
@@ -152,6 +156,15 @@ poetry run skseq experiments run-synthetic main
 
 This trains all configured loss functions (SGT variants, MSE, MAE, Cauchy,
 Huber, Tukey) across multiple runs and logs results to MLflow.
+
+For faster iteration, tune dataset size, stride, and training params:
+
+```bash
+poetry run skseq experiments run-synthetic main \
+  --n-sequences 2000 --n-runs 3 --stride 10 \
+  --batch-size 64 --num-epochs 50 --early-stopping-patience 10 \
+  --num-workers 4
+```
 
 **4. Visualise results**
 
@@ -233,6 +246,20 @@ poetry run skseq experiments run-synthetic main
 poetry run skseq experiments dispersion-scaling main
 ```
 
+All experiment commands accept these common options:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--n-runs` | 10 | Repetitions per configuration |
+| `--stride` | 1 | Sliding window stride (higher = fewer samples) |
+| `--batch-size` | 32 | Training batch size |
+| `--num-epochs` | 100 | Maximum training epochs |
+| `--early-stopping-patience` | 20 | Epochs without improvement before stopping |
+| `--num-workers` | 0 | DataLoader worker processes |
+
+The `run-synthetic` command additionally accepts `--n-sequences` (default 10000)
+to control synthetic dataset size.
+
 ## Docker
 
 A multi-stage Dockerfile and `docker-compose.yml` are provided for
@@ -284,7 +311,7 @@ make pre-commit  # Run all pre-commit hooks
 
 ### Testing
 
-The test suite (63 tests) lives in `tests/`:
+The test suite (77 tests) lives in `tests/`:
 
 | Module | What it tests |
 |--------|---------------|
@@ -308,13 +335,15 @@ All experiment parameters live in `skewed_sequences/config.py`:
 | Constant | Default | Description |
 |----------|---------|-------------|
 | `SEQUENCE_LENGTH` | 300 | Input sequence length |
-| `OUTPUT_LENGTH` | 5 | Multi-step prediction horizon |
+| `CONTEXT_LENGTH` | 200 | Context window for model input |
+| `OUTPUT_LENGTH` | 3 | Multi-step prediction horizon |
+| `STRIDE` | 1 | Sliding window stride |
 | `N_RUNS` | 10 | Repetitions per experiment |
 | `SEED` | 927 | Random seed |
 
 - **`SYNTHETIC_DATA_CONFIGS`** — defines the four synthetic dataset variants
   (λ, q, σ combinations)
-- **`TRAINING_CONFIGS`** — 15 training configurations covering SGT parameter
+- **`TRAINING_CONFIGS`** — 17 training configurations covering SGT parameter
   sweeps + baseline losses (MSE, MAE, Cauchy, Huber, Tukey)
 - **`SGT_LOSS_LAMBDAS`** — λ values for the SGT loss lambda sweep experiment
 

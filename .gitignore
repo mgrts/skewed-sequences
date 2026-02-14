@@ -172,3 +172,4 @@ models/
 reports/
 
 mlruns/
+mlruns.db
