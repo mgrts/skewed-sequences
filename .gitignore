@@ -170,6 +170,7 @@ cython_debug/
 notebooks/
 models/
 reports/
+*.ipynb
 
 mlruns/
 mlruns.db
