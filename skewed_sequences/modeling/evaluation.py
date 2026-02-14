@@ -81,12 +81,19 @@ def log_val_predictions(
             device=device,
         )
 
-        # Collect single-step predictions into a 1-D array
+        # Collect predictions into a 1-D array (one value per timestep).
+        # When output_len=1 each pred is a single scalar; when output_len>1
+        # each pred fills consecutive positions (last write wins on overlap).
         seq_1d = seq.squeeze()
         T = len(seq_1d)
         prediction_line = np.full(T, np.nan)
         for start_idx, pred in preds:
-            prediction_line[start_idx] = pred.squeeze()[0] if pred.ndim > 1 else pred[0]
+            vals = pred.squeeze()
+            if vals.ndim == 0:
+                prediction_line[start_idx] = float(vals)
+            else:
+                end_idx = min(start_idx + len(vals), T)
+                prediction_line[start_idx:end_idx] = vals[: end_idx - start_idx]
 
         fig = visualize_sliding_window_prediction(
             sequence=seq,
