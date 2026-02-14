@@ -21,7 +21,7 @@ class SlidingWindowDataset(Dataset):
         stride: int = 1,
     ):
         super().__init__()
-        self.data = data
+        self.data = torch.from_numpy(data).float()
         self.context_len = context_len
         self.output_len = output_len
         window_total = context_len + output_len
@@ -42,8 +42,8 @@ class SlidingWindowDataset(Dataset):
         end_input = start + self.context_len
         end_target = end_input + self.output_len
         return (
-            torch.tensor(self.data[seq_idx, start:end_input, :], dtype=torch.float32),
-            torch.tensor(self.data[seq_idx, end_input:end_target, :], dtype=torch.float32),
+            self.data[seq_idx, start:end_input, :],
+            self.data[seq_idx, end_input:end_target, :],
         )
 
 
@@ -60,16 +60,21 @@ def create_dataloaders(
     # Split at the sequence level to prevent leakage
     train_data, val_data = train_test_split(data, test_size=test_split, random_state=seed)
 
+    persistent = num_workers > 0
     train_loader = DataLoader(
         SlidingWindowDataset(train_data, context_len, output_len, stride),
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
+        pin_memory=True,
+        persistent_workers=persistent,
     )
     val_loader = DataLoader(
         SlidingWindowDataset(val_data, context_len, output_len, stride),
         batch_size=batch_size,
         num_workers=num_workers,
+        pin_memory=True,
+        persistent_workers=persistent,
     )
 
     return train_loader, val_loader, val_data

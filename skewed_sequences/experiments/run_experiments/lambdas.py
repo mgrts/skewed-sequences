@@ -11,6 +11,7 @@ from skewed_sequences.modeling.train import main as train_main
 
 
 def main(
+    stride: int = STRIDE,
     batch_size: int = 32,
     num_epochs: int = 100,
     early_stopping_patience: int = 20,
@@ -29,7 +30,7 @@ def main(
             sgt_loss_lambda=sgt_lambda,
             output_length=OUTPUT_LENGTH,
             context_length=CONTEXT_LENGTH,
-            stride=STRIDE,
+            stride=stride,
             batch_size=batch_size,
             num_epochs=num_epochs,
             early_stopping_patience=early_stopping_patience,

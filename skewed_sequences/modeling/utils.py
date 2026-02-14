@@ -17,9 +17,11 @@ def train_epoch(
     criterion: nn.Module,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
-) -> float:
+) -> tuple:
     model.train()
     losses = []
+    all_preds = []
+    all_targets = []
 
     for src, tgt in dataloader:
         src, tgt = src.to(device), tgt.to(device)
@@ -29,8 +31,13 @@ def train_epoch(
         loss.backward()
         optimizer.step()
         losses.append(loss.item())
+        all_preds.append(output.detach())
+        all_targets.append(tgt.detach())
 
-    return float(np.mean(losses))
+    avg_loss = float(np.mean(losses))
+    metrics = compute_metrics(torch.cat(all_preds), torch.cat(all_targets))
+    metrics["loss"] = avg_loss
+    return avg_loss, metrics
 
 
 @torch.no_grad()
@@ -39,17 +46,24 @@ def evaluate(
     dataloader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
-) -> float:
+) -> tuple:
     model.eval()
     losses = []
+    all_preds = []
+    all_targets = []
 
     for src, tgt in dataloader:
         src, tgt = src.to(device), tgt.to(device)
         output = model(src, tgt)
         loss = criterion(output, tgt)
         losses.append(loss.item())
+        all_preds.append(output)
+        all_targets.append(tgt)
 
-    return float(np.mean(losses))
+    avg_loss = float(np.mean(losses))
+    metrics = compute_metrics(torch.cat(all_preds), torch.cat(all_targets))
+    metrics["loss"] = avg_loss
+    return avg_loss, metrics
 
 
 def compute_metrics(y_pred: torch.Tensor, y_true: torch.Tensor, eps: float = 1e-6) -> dict:

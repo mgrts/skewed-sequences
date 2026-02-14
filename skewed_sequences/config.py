@@ -23,7 +23,7 @@ MODELS_DIR = PROJ_ROOT / "models"
 REPORTS_DIR = PROJ_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
 
-TRACKING_URI = PROJ_ROOT / "mlruns"
+TRACKING_URI = f"sqlite:///{PROJ_ROOT / 'mlruns.db'}"
 
 SEED = 927
 

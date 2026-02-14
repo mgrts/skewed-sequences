@@ -17,6 +17,7 @@ app = typer.Typer(pretty_exceptions_show_locals=False)
 @app.command()
 def main(
     n_runs: int = N_RUNS,
+    stride: int = STRIDE,
     batch_size: int = 32,
     num_epochs: int = 100,
     early_stopping_patience: int = 20,
@@ -47,7 +48,7 @@ def main(
                     sgt_loss_p=training_config["sgt_loss_p"],
                     output_length=training_config.get("output_length", 5),
                     context_length=CONTEXT_LENGTH,
-                    stride=STRIDE,
+                    stride=stride,
                     experiment_name=experiment_name,
                     seed=experiment_seed,
                     batch_size=batch_size,
@@ -61,7 +62,7 @@ def main(
                     loss_type=loss_type,
                     output_length=training_config.get("output_length", 5),
                     context_length=CONTEXT_LENGTH,
-                    stride=STRIDE,
+                    stride=stride,
                     experiment_name=experiment_name,
                     seed=experiment_seed,
                     batch_size=batch_size,

@@ -2,7 +2,7 @@ from loguru import logger
 import mlflow
 import torch
 
-from skewed_sequences.modeling.utils import EarlyStopping, compute_metrics, evaluate, train_epoch
+from skewed_sequences.modeling.utils import EarlyStopping, evaluate, train_epoch
 
 
 def train_model(
@@ -23,14 +23,8 @@ def train_model(
     best_val_metrics = {}
 
     for epoch in range(1, num_epochs + 1):
-        train_loss = train_epoch(model, train_loader, criterion, optimizer, device)
-        val_loss = evaluate(model, val_loader, criterion, device)
-
-        # Compute metrics
-        model.eval()
-        with torch.no_grad():
-            train_metrics = _collect_metrics(model, train_loader, device, train_loss)
-            val_metrics = _collect_metrics(model, val_loader, device, val_loss)
+        train_loss, train_metrics = train_epoch(model, train_loader, criterion, optimizer, device)
+        val_loss, val_metrics = evaluate(model, val_loader, criterion, device)
 
         # Log to MLflow
         mlflow.log_metrics(
@@ -65,18 +59,3 @@ def train_model(
             break
 
     return best_val_loss, best_train_metrics, best_val_metrics
-
-
-def _collect_metrics(model, dataloader, device, loss_value):
-    preds, targets = [], []
-    for src, tgt in dataloader:
-        src, tgt = src.to(device), tgt.to(device)
-        pred = model(src, tgt)
-        preds.append(pred)
-        targets.append(tgt)
-
-    preds = torch.cat(preds)
-    targets = torch.cat(targets)
-    metrics = compute_metrics(preds, targets)
-    metrics["loss"] = loss_value
-    return metrics
