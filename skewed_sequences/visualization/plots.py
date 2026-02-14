@@ -9,7 +9,7 @@ import typer
 from skewed_sequences.config import FIGURES_DIR, PROCESSED_DATA_DIR, SYNTHETIC_DATA_CONFIGS
 from skewed_sequences.data.rvr_us.dataset import main as create_rvr_dataset_main
 from skewed_sequences.data.synthetic.generate_data import main as generate_data_main
-from skewed_sequences.style import PALETTE_SEQ, apply_style
+from skewed_sequences.visualization.style import PALETTE_SEQ, apply_style
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 

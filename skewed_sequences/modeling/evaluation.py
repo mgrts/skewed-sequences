@@ -5,7 +5,7 @@ import mlflow
 import numpy as np
 import torch
 
-from skewed_sequences.modeling.visualize import visualize_sliding_window_prediction
+from skewed_sequences.visualization.predictions import visualize_sliding_window_prediction
 
 
 def sliding_window_predictions(
@@ -49,50 +49,6 @@ def sliding_window_predictions(
     return predictions
 
 
-def aggregate_dense_predictions(
-    predictions: List[Tuple[int, np.ndarray]],
-    seq_len: int,
-    n_features: int,
-    output_len: int,
-) -> dict:
-    """Accumulate overlapping predictions into mean / min / max arrays.
-
-    Args:
-        predictions: Output of :func:`sliding_window_predictions` with stride=1.
-        seq_len: Total length of the original sequence.
-        n_features: Number of features per time-step.
-        output_len: Prediction horizon (used only for documentation clarity).
-
-    Returns:
-        Dict with keys ``"mean"``, ``"min"``, ``"max"`` — each a numpy array
-        of shape ``(seq_len,)`` (squeezed from the first feature dimension).
-        Positions without predictions are ``NaN``.
-    """
-    accumulator = np.full((seq_len, n_features), 0.0, dtype=np.float64)
-    minimum = np.full((seq_len, n_features), np.inf, dtype=np.float64)
-    maximum = np.full((seq_len, n_features), -np.inf, dtype=np.float64)
-    counts = np.zeros(seq_len, dtype=np.int64)
-
-    for start_idx, pred in predictions:
-        pred_2d = pred if pred.ndim == 2 else pred[:, None]
-        end_idx = start_idx + pred_2d.shape[0]
-        accumulator[start_idx:end_idx] += pred_2d
-        minimum[start_idx:end_idx] = np.minimum(minimum[start_idx:end_idx], pred_2d)
-        maximum[start_idx:end_idx] = np.maximum(maximum[start_idx:end_idx], pred_2d)
-        counts[start_idx:end_idx] += 1
-
-    has_data = counts > 0
-    mean = np.full(seq_len, np.nan)
-    mn = np.full(seq_len, np.nan)
-    mx = np.full(seq_len, np.nan)
-
-    mean[has_data] = accumulator[has_data, 0] / counts[has_data]
-    mn[has_data] = minimum[has_data, 0]
-    mx[has_data] = maximum[has_data, 0]
-
-    return {"mean": mean, "min": mn, "max": mx}
-
-
 def log_val_predictions(
     model: torch.nn.Module,
     val_data_raw: np.ndarray,
@@ -101,24 +57,22 @@ def log_val_predictions(
     output_len: int,
     num_vis_examples: int = 3,
 ) -> None:
-    """Generate sliding-window prediction figures and log them to MLflow.
+    """Generate single-step prediction figures and log them to MLflow.
 
-    For each of the first *num_vis_examples* validation sequences, runs two
-    inference passes (dense stride=1 and tiled stride=output_len), produces
-    a figure via :func:`visualize_sliding_window_prediction`, and logs it.
+    For each of the first *num_vis_examples* validation sequences, runs
+    single-step autoregressive inference (stride=1, output_len=1), collects
+    predictions into a 1-D array, and logs a ground-truth vs prediction figure.
     """
     device = next(model.parameters()).device
     model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
     model.eval()
 
     n_seqs = val_data_raw.shape[0]
-    n_features = val_data_raw.shape[2] if val_data_raw.ndim == 3 else 1
 
     for i in range(min(num_vis_examples, n_seqs)):
         seq = val_data_raw[i]  # (T, n_features) or (T,)
 
-        # Dense predictions (stride=1)
-        dense_preds = sliding_window_predictions(
+        preds = sliding_window_predictions(
             model,
             seq,
             context_len,
@@ -126,29 +80,18 @@ def log_val_predictions(
             stride=1,
             device=device,
         )
-        dense_agg = aggregate_dense_predictions(
-            dense_preds,
-            seq_len=seq.shape[0],
-            n_features=n_features,
-            output_len=output_len,
-        )
 
-        # Tiled predictions (stride=output_len)
-        tiled_preds = sliding_window_predictions(
-            model,
-            seq,
-            context_len,
-            output_len,
-            stride=output_len,
-            device=device,
-        )
+        # Collect single-step predictions into a 1-D array
+        seq_1d = seq.squeeze()
+        T = len(seq_1d)
+        prediction_line = np.full(T, np.nan)
+        for start_idx, pred in preds:
+            prediction_line[start_idx] = pred.squeeze()[0] if pred.ndim > 1 else pred[0]
 
         fig = visualize_sliding_window_prediction(
             sequence=seq,
-            dense_agg=dense_agg,
-            tiled_predictions=tiled_preds,
+            predictions=prediction_line,
             context_len=context_len,
-            output_len=output_len,
         )
         mlflow.log_figure(fig, f"prediction_{i}.png")
         plt.close(fig)

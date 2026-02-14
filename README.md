@@ -86,10 +86,11 @@ LANL earthquakes, RVR US hospitalisations, Health & Fitness wearable data).
 - **Lazy CLI imports** — `cli.py` uses a `_LazyTyper` proxy pattern so that
   `poetry run skseq --help` responds instantly. Heavy dependencies (scipy,
   sklearn, torch, mlflow) are only imported when a sub-command is invoked.
-- **Multi-step prediction** — the system predicts `OUTPUT_LENGTH` (default 3)
-  future time steps rather than a single step. This is configured in
-  `config.py` and used consistently across all training configs, experiment
-  runners, CLI defaults, and model architectures.
+- **Single-step autoregressive prediction** — the system predicts
+  `OUTPUT_LENGTH` (default 1) future time step using the previous context
+  window as input. This is configured in `config.py` and used consistently
+  across all training configs, experiment runners, CLI defaults, and model
+  architectures.
 - **Optimised data pipeline** — training data is pre-tensorised once on dataset
   creation (zero-copy slicing in `__getitem__`), metrics are collected inline
   during train/eval passes (no redundant data iterations), and DataLoaders use
@@ -336,7 +337,7 @@ All experiment parameters live in `skewed_sequences/config.py`:
 |----------|---------|-------------|
 | `SEQUENCE_LENGTH` | 300 | Input sequence length |
 | `CONTEXT_LENGTH` | 200 | Context window for model input |
-| `OUTPUT_LENGTH` | 3 | Multi-step prediction horizon |
+| `OUTPUT_LENGTH` | 1 | Single-step prediction horizon |
 | `STRIDE` | 1 | Sliding window stride |
 | `N_RUNS` | 10 | Repetitions per experiment |
 | `SEED` | 927 | Random seed |

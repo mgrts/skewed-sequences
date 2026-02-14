@@ -15,7 +15,7 @@ from scipy.special import beta as beta_func
 import typer
 
 from skewed_sequences.config import FIGURES_DIR
-from skewed_sequences.style import PALETTE_SEQ, apply_style
+from skewed_sequences.visualization.style import PALETTE_SEQ, apply_style
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 

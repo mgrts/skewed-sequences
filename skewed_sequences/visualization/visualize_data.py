@@ -42,7 +42,7 @@ from skewed_sequences.data.synthetic.generate_data import (
     SkewedGeneralizedT,
     smooth_sequence,
 )
-from skewed_sequences.style import COLORS, apply_style
+from skewed_sequences.visualization.style import COLORS, apply_style
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 

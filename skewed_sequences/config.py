@@ -45,8 +45,8 @@ N_RUNS = 10
 
 SGT_LOSS_LAMBDAS = [-0.1, -0.01, -0.001, -0.0001, 0.0, 0.0001, 0.001, 0.01, 0.1]
 
-# 3-step prediction horizon.
-OUTPUT_LENGTH = 3
+# Single-step prediction horizon.
+OUTPUT_LENGTH = 1
 
 SYNTHETIC_DATA_CONFIGS = [
     # q values use q^p reparameterization (old q=100 → new q=10 with p=2)

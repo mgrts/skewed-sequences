@@ -7,9 +7,7 @@ DPI = 150
 
 COLORS = {
     "ground_truth": "#2d3436",
-    "dense_mean": "#0984e3",
-    "dense_band": "#74b9ff",
-    "tiled": "#d63031",
+    "prediction": "#0984e3",
     "primary": "#1f77b4",
     "secondary": "#ff7f0e",
     "context_boundary": "#636e72",

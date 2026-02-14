@@ -33,7 +33,7 @@ def test_constants():
     assert SEQUENCE_LENGTH == 300
     assert CONTEXT_LENGTH == 200
     assert STRIDE == 1
-    assert OUTPUT_LENGTH == 3
+    assert OUTPUT_LENGTH == 1
     assert N_RUNS >= 1
 
 
