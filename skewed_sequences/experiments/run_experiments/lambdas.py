@@ -20,9 +20,12 @@ def main(
     """
     Runs training experiments for each value in SGT_LOSS_LAMBDAS.
     """
+    total_experiments = len(SGT_LOSS_LAMBDAS)
     dataset_path = PROCESSED_DATA_DIR / "synthetic_dataset.npy"
-    for sgt_lambda in SGT_LOSS_LAMBDAS:
-        typer.echo(f"Starting training with sgt_lambda = {sgt_lambda}")
+    for experiment_counter, sgt_lambda in enumerate(SGT_LOSS_LAMBDAS, 1):
+        typer.echo(
+            f"[{experiment_counter}/{total_experiments}] Starting training with sgt_lambda = {sgt_lambda}"
+        )
         # Call the main training function with the current sgt_lambda
         train_main(
             dataset_path=dataset_path,

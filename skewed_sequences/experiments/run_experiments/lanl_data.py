@@ -32,17 +32,21 @@ def main(
     dataset_path: Path = PROCESSED_DATA_DIR / dataset_name
     training_configs = TRAINING_CONFIGS
 
+    total_experiments = len(training_configs) * n_runs
+    experiment_counter = 0
+
     typer.echo(f"==== Using dataset: {dataset_path.name} ====")
 
     for train_config in training_configs:
         loss_type = train_config["loss_type"]
 
         for run_idx in range(1, n_runs + 1):
+            experiment_counter += 1
             experiment_seed = random.randint(0, 2**32 - 1)
             experiment_name = f"lanl_{loss_type}_run_{run_idx}"
 
             typer.echo(
-                f"==== Starting training: {experiment_name} "
+                f"==== [{experiment_counter}/{total_experiments}] Starting training: {experiment_name} "
                 f"with loss_type={loss_type}, seed={experiment_seed} ===="
             )
 

@@ -27,15 +27,19 @@ def main(
     dataset_path = PROCESSED_DATA_DIR / "dataset.npy"
     training_configs = TRAINING_CONFIGS
 
+    total_experiments = len(training_configs) * n_runs
+    experiment_counter = 0
+
     for training_config in training_configs:
         loss_type = training_config["loss_type"]
 
         for run_idx in range(1, n_runs + 1):
+            experiment_counter += 1
             experiment_seed = random.randint(0, 2**32 - 1)
             experiment_name = f"{experiment_name_base}_run_{run_idx}"
 
             typer.echo(
-                f"Starting training with config: {training_config}, run: {run_idx}, seed: {experiment_seed}"
+                f"[{experiment_counter}/{total_experiments}] Starting training with config: {training_config}, run: {run_idx}, seed: {experiment_seed}"
             )
 
             if loss_type.lower() == "sgt":

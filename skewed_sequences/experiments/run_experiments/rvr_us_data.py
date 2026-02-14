@@ -32,6 +32,9 @@ def main(
     training_configs = TRAINING_CONFIGS
     dataset_path = PROCESSED_DATA_DIR / "rvr_us_data.npy"
 
+    total_experiments = len(time_series_list) * len(training_configs) * n_runs
+    experiment_counter = 0
+
     for time_series in time_series_list:
         if time_series == "average_inpatient_beds_occupied":
             experiment_base_name = "rvr-us-bed-occupancy"
@@ -46,11 +49,12 @@ def main(
             loss_type = training_config["loss_type"]
 
             for run_idx in range(1, n_runs + 1):
+                experiment_counter += 1
                 experiment_seed = random.randint(0, 2**32 - 1)
                 experiment_name = f"{experiment_base_name}_run_{run_idx}"
 
                 typer.echo(
-                    f"Starting training: {experiment_name} with config: {training_config}, seed: {experiment_seed}"
+                    f"[{experiment_counter}/{total_experiments}] Starting training: {experiment_name} with config: {training_config}, seed: {experiment_seed}"
                 )
 
                 if loss_type.lower() == "sgt":
