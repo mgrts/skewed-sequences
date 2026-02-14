@@ -19,6 +19,7 @@ app = typer.Typer(pretty_exceptions_show_locals=False)
 @app.command()
 def main(
     n_runs: int = N_RUNS,
+    n_sequences: int = 10000,
     stride: int = STRIDE,
     batch_size: int = 32,
     num_epochs: int = 100,
@@ -37,7 +38,7 @@ def main(
 
         typer.echo(f"==== Generating dataset with lam={lam}, q={q}, sigma={sigma} ====")
 
-        generate_data_main(lam=lam, q=q, sigma=sigma)
+        generate_data_main(lam=lam, q=q, sigma=sigma, n_sequences=n_sequences)
 
         typer.echo("Dataset generation complete.\n")
 
