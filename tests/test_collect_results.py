@@ -80,17 +80,21 @@ def test_collect_single_run(mock_client_cls):
 
     run = _make_run(
         params={
-            "seed": "42",
+            "random_state": "42",
+            "model_type": "transformer",
+            "context_length": "200",
             "output_length": "1",
             "stride": "1",
             "loss_type": "mse",
             "sgt_loss_lambda": "0.0",
             "sgt_loss_q": "2.0",
             "sgt_loss_sigma": "1.0",
+            "sgt_loss_p": "2.0",
         },
         metrics={
             "best_train_smape": 10.5,
             "best_val_smape": 15.3,
+            "best_test_smape": 14.1,
         },
     )
     client.search_runs.return_value = _make_page([run])
@@ -104,14 +108,18 @@ def test_collect_single_run(mock_client_cls):
     assert row["dataset"] == "normal"
     assert row["status"] == "FINISHED"
     assert row["random_state"] == 42
+    assert row["model_type"] == "transformer"
+    assert row["context_length"] == 200
     assert row["output_length"] == 1
     assert row["stride"] == 1
     assert row["loss_type"] == "mse"
     assert row["sgt_loss_lambda"] == 0.0
     assert row["sgt_loss_q"] == 2.0
     assert row["sgt_loss_sigma"] == 1.0
+    assert row["sgt_loss_p"] == 2.0
     assert row["best_train_smape"] == 10.5
     assert row["best_val_smape"] == 15.3
+    assert row["best_test_smape"] == 14.1
 
 
 @patch("skewed_sequences.experiments.collect_results.MlflowClient")
@@ -133,7 +141,7 @@ def test_collect_missing_params_are_nan(mock_client_cls):
     ]
 
     run = _make_run(
-        params={"seed": "42", "loss_type": "mae"},
+        params={"random_state": "42", "loss_type": "mae"},
         metrics={},
     )
     client.search_runs.return_value = _make_page([run])
@@ -144,10 +152,14 @@ def test_collect_missing_params_are_nan(mock_client_cls):
     row = df.iloc[0]
     assert row["random_state"] == 42
     assert row["loss_type"] == "mae"
+    assert row["model_type"] is None
+    assert pd.isna(row["context_length"])
     assert pd.isna(row["output_length"])
     assert pd.isna(row["sgt_loss_lambda"])
+    assert pd.isna(row["sgt_loss_p"])
     assert pd.isna(row["best_train_smape"])
     assert pd.isna(row["best_val_smape"])
+    assert pd.isna(row["best_test_smape"])
 
 
 @patch("skewed_sequences.experiments.collect_results.MlflowClient")
@@ -159,11 +171,11 @@ def test_collect_multiple_experiments(mock_client_cls):
     ]
 
     run1 = _make_run(
-        params={"seed": "1", "loss_type": "mse"},
+        params={"random_state": "1", "loss_type": "mse"},
         metrics={"best_val_smape": 10.0},
     )
     run2 = _make_run(
-        params={"seed": "2", "loss_type": "sgt"},
+        params={"random_state": "2", "loss_type": "sgt"},
         metrics={"best_val_smape": 8.0},
     )
 
@@ -186,8 +198,8 @@ def test_collect_pagination(mock_client_cls):
         _make_experiment("1", "normal_run_1"),
     ]
 
-    run1 = _make_run(params={"seed": "1", "loss_type": "mse"}, metrics={})
-    run2 = _make_run(params={"seed": "2", "loss_type": "mae"}, metrics={})
+    run1 = _make_run(params={"random_state": "1", "loss_type": "mse"}, metrics={})
+    run2 = _make_run(params={"random_state": "2", "loss_type": "mae"}, metrics={})
 
     page1 = _make_page([run1], token="next_page")
     page2 = _make_page([run2], token=None)
@@ -207,7 +219,7 @@ def test_created_at_is_utc_datetime(mock_client_cls):
     ]
 
     run = _make_run(
-        params={"seed": "1", "loss_type": "mse"},
+        params={"random_state": "1", "loss_type": "mse"},
         metrics={},
         start_time=1700000000000,
     )

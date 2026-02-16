@@ -65,6 +65,7 @@ def main(
     num_epochs: int = 100,
     learning_rate: float = 1e-4,
     test_split: float = 0.1,
+    val_split: float = 0.1,
     seed: int = SEED,
     early_stopping_patience: int = 20,
     num_workers: int = 0,
@@ -92,12 +93,13 @@ def main(
         f"exceeds sequence length ({data.shape[1]})"
     )
 
-    train_loader, val_loader, val_data_raw = create_dataloaders(
+    train_loader, val_loader, test_loader, val_data_raw = create_dataloaders(
         data=data,
         context_len=context_length,
         output_len=output_length,
         batch_size=batch_size,
         test_split=test_split,
+        val_split=val_split,
         stride=stride,
         seed=seed,
         num_workers=num_workers,
@@ -155,14 +157,16 @@ def main(
                 "early_stopping_patience": early_stopping_patience,
                 "num_epochs": num_epochs,
                 "test_split": test_split,
-                "seed": seed,
+                "val_split": val_split,
+                "random_state": seed,
             }
         )
 
-        best_val_loss, best_train_metrics, best_val_metrics = train_model(
+        best_val_loss, best_train_metrics, best_val_metrics, best_test_metrics = train_model(
             model=model,
             train_loader=train_loader,
             val_loader=val_loader,
+            test_loader=test_loader,
             criterion=criterion,
             optimizer=optimizer,
             model_save_path=model_save_path,
@@ -173,7 +177,11 @@ def main(
         mlflow.log_metrics(
             {
                 "best_train_smape": best_train_metrics.get("smape"),
+                "best_train_mape": best_train_metrics.get("mape"),
                 "best_val_smape": best_val_metrics.get("smape"),
+                "best_val_mape": best_val_metrics.get("mape"),
+                "best_test_smape": best_test_metrics.get("smape"),
+                "best_test_mape": best_test_metrics.get("mape"),
             }
         )
 

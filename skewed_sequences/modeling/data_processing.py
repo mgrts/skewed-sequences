@@ -53,12 +53,16 @@ def create_dataloaders(
     output_len: int,
     batch_size: int,
     test_split: float,
+    val_split: float = 0.1,
     stride: int = 1,
     seed: int = 42,
     num_workers: int = 0,
-) -> Tuple[DataLoader, DataLoader, np.ndarray]:
+) -> Tuple[DataLoader, DataLoader, DataLoader, np.ndarray]:
     # Split at the sequence level to prevent leakage
-    train_data, val_data = train_test_split(data, test_size=test_split, random_state=seed)
+    train_data, test_data = train_test_split(data, test_size=test_split, random_state=seed)
+    # val_split is relative to the remaining train portion
+    val_relative = val_split / (1 - test_split)
+    train_data, val_data = train_test_split(train_data, test_size=val_relative, random_state=seed)
 
     persistent = num_workers > 0
     train_loader = DataLoader(
@@ -76,5 +80,12 @@ def create_dataloaders(
         pin_memory=True,
         persistent_workers=persistent,
     )
+    test_loader = DataLoader(
+        SlidingWindowDataset(test_data, context_len, output_len, stride),
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=True,
+        persistent_workers=persistent,
+    )
 
-    return train_loader, val_loader, val_data
+    return train_loader, val_loader, test_loader, val_data

@@ -9,6 +9,7 @@ def train_model(
     model,
     train_loader,
     val_loader,
+    test_loader,
     criterion,
     optimizer,
     model_save_path,
@@ -19,8 +20,6 @@ def train_model(
     early_stopper = EarlyStopping(patience=early_stopping_patience)
 
     best_val_loss = float("inf")
-    best_train_metrics = {}
-    best_val_metrics = {}
 
     for epoch in range(1, num_epochs + 1):
         train_loss, train_metrics = train_epoch(model, train_loader, criterion, optimizer, device)
@@ -47,8 +46,6 @@ def train_model(
 
         if val_loss < best_val_loss - 1e-6:
             best_val_loss = val_loss
-            best_train_metrics = train_metrics
-            best_val_metrics = val_metrics
 
             torch.save(model.state_dict(), model_save_path)
             mlflow.log_artifact(model_save_path)
@@ -58,4 +55,10 @@ def train_model(
             logger.warning(f"Early stopping triggered after {epoch} epochs.")
             break
 
-    return best_val_loss, best_train_metrics, best_val_metrics
+    # Reload best checkpoint and re-evaluate all splits in eval mode
+    model.load_state_dict(torch.load(model_save_path, weights_only=True))
+    _, best_train_metrics = evaluate(model, train_loader, criterion, device)
+    _, best_val_metrics = evaluate(model, val_loader, criterion, device)
+    _, best_test_metrics = evaluate(model, test_loader, criterion, device)
+
+    return best_val_loss, best_train_metrics, best_val_metrics, best_test_metrics

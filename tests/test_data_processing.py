@@ -52,26 +52,34 @@ class TestSlidingWindowDataset:
 
 
 class TestCreateDataloaders:
-    def test_sequence_level_split(self):
-        """Train/val split happens at sequence level, not window level."""
+    def test_three_way_split_proportions(self):
+        """Train/val/test split happens at sequence level with correct proportions."""
         n_seqs, T, feats = 100, 50, 1
         context_len, output_len = 20, 5
         data = np.random.randn(n_seqs, T, feats).astype(np.float32)
-        train_dl, val_dl, _ = create_dataloaders(
+        train_dl, val_dl, test_dl, _ = create_dataloaders(
             data,
             context_len=context_len,
             output_len=output_len,
             batch_size=16,
             test_split=0.2,
+            val_split=0.1,
             seed=0,
         )
         windows_per_seq = T - context_len - output_len + 1  # 26
-        assert len(train_dl.dataset) == 80 * windows_per_seq
-        assert len(val_dl.dataset) == 20 * windows_per_seq
+        # 100 seqs -> 20 test, 80 remaining -> val_relative=0.125 -> 10 val, 70 train
+        assert len(test_dl.dataset) == 20 * windows_per_seq
+        assert len(val_dl.dataset) == 10 * windows_per_seq
+        assert len(train_dl.dataset) == 70 * windows_per_seq
+        # All sequences accounted for
+        total_seqs = (
+            len(train_dl.dataset) + len(val_dl.dataset) + len(test_dl.dataset)
+        ) / windows_per_seq
+        assert total_seqs == n_seqs
 
     def test_batch_shapes(self):
         data = np.random.randn(50, 40, 1).astype(np.float32)
-        train_dl, _, _ = create_dataloaders(
+        train_dl, _, _, _ = create_dataloaders(
             data,
             context_len=20,
             output_len=5,

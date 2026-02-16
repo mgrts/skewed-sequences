@@ -35,8 +35,9 @@ def collect_experiment_results(tracking_uri: str = TRACKING_URI) -> pd.DataFrame
 
     Returns a DataFrame with columns:
         run_name, experiment_name, created_at, status, random_state,
-        output_length, stride, dataset, loss_type, sgt_loss_lambda,
-        sgt_loss_q, sgt_loss_sigma, best_train_smape, best_val_smape
+        model_type, context_length, output_length, stride, dataset,
+        loss_type, sgt_loss_lambda, sgt_loss_q, sgt_loss_sigma, sgt_loss_p,
+        best_train_smape, best_val_smape, best_test_smape
     """
     client = MlflowClient(tracking_uri=tracking_uri)
 
@@ -63,7 +64,9 @@ def collect_experiment_results(tracking_uri: str = TRACKING_URI) -> pd.DataFrame
                             run.info.start_time / 1000, tz=timezone.utc
                         ),
                         "status": run.info.status,
-                        "random_state": params.get("seed"),
+                        "random_state": params.get("random_state", params.get("seed")),
+                        "model_type": params.get("model_type"),
+                        "context_length": params.get("context_length"),
                         "output_length": params.get("output_length"),
                         "stride": params.get("stride"),
                         "dataset": _derive_dataset(exp_name),
@@ -71,8 +74,10 @@ def collect_experiment_results(tracking_uri: str = TRACKING_URI) -> pd.DataFrame
                         "sgt_loss_lambda": params.get("sgt_loss_lambda"),
                         "sgt_loss_q": params.get("sgt_loss_q"),
                         "sgt_loss_sigma": params.get("sgt_loss_sigma"),
+                        "sgt_loss_p": params.get("sgt_loss_p"),
                         "best_train_smape": metrics.get("best_train_smape"),
                         "best_val_smape": metrics.get("best_val_smape"),
+                        "best_test_smape": metrics.get("best_test_smape"),
                     }
                 )
             page_token = page.token if hasattr(page, "token") else None
@@ -84,13 +89,16 @@ def collect_experiment_results(tracking_uri: str = TRACKING_URI) -> pd.DataFrame
     if not df.empty:
         numeric_cols = [
             "random_state",
+            "context_length",
             "output_length",
             "stride",
             "sgt_loss_lambda",
             "sgt_loss_q",
             "sgt_loss_sigma",
+            "sgt_loss_p",
             "best_train_smape",
             "best_val_smape",
+            "best_test_smape",
         ]
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors="coerce")
