@@ -20,6 +20,7 @@ def _derive_dataset(experiment_name: str) -> str:
     Experiment names follow patterns like:
     - "normal_run_1" -> "normal"
     - "heavy-tailed-skewed_run_3" -> "heavy-tailed-skewed"
+    - "exp-normal_run_1" -> "exp-normal"
     - "covid-owid_run_1" -> "covid-owid"
     - "lanl_sgt_run_1" -> "lanl"
     - "rvr-us-bed-occupancy_run_1" -> "rvr-us-bed-occupancy"
@@ -35,7 +36,7 @@ def collect_experiment_results(tracking_uri: str = TRACKING_URI) -> pd.DataFrame
 
     Returns a DataFrame with columns:
         run_name, experiment_name, created_at, status, random_state,
-        model_type, context_length, output_length, stride, dataset,
+        model_type, context_length, output_length, stride, exp_transform, dataset,
         loss_type, sgt_loss_lambda, sgt_loss_q, sgt_loss_sigma, sgt_loss_p,
         best_train_smape, best_val_smape, best_test_smape
     """
@@ -69,6 +70,7 @@ def collect_experiment_results(tracking_uri: str = TRACKING_URI) -> pd.DataFrame
                         "context_length": params.get("context_length"),
                         "output_length": params.get("output_length"),
                         "stride": params.get("stride"),
+                        "exp_transform": params.get("exp_transform"),
                         "dataset": _derive_dataset(exp_name),
                         "loss_type": params.get("loss_type"),
                         "sgt_loss_lambda": params.get("sgt_loss_lambda"),

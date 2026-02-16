@@ -74,6 +74,7 @@ def main(
     sgt_loss_lambda: float = 0.0,
     sgt_loss_q: float = 2.0,
     sgt_loss_p: float = 2.0,
+    exp_transform: bool = False,
     experiment_name: str = "Transformer-SGT-synthetic",
 ):
     set_seed(seed)
@@ -158,6 +159,7 @@ def main(
                 "num_epochs": num_epochs,
                 "test_split": test_split,
                 "val_split": val_split,
+                "exp_transform": exp_transform,
                 "random_state": seed,
             }
         )

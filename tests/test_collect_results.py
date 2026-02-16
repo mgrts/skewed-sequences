@@ -23,6 +23,8 @@ from skewed_sequences.experiments.collect_results import (
         ("heavy-tailed_run_2", "heavy-tailed"),
         ("normal-skewed_run_5", "normal-skewed"),
         ("heavy-tailed-skewed_run_3", "heavy-tailed-skewed"),
+        ("exp-normal_run_1", "exp-normal"),
+        ("exp-heavy-tailed-skewed_run_3", "exp-heavy-tailed-skewed"),
         ("covid-owid_run_1", "covid-owid"),
         ("lanl_sgt_run_1", "lanl"),
         ("lanl_mse_run_5", "lanl"),
@@ -90,6 +92,7 @@ def test_collect_single_run(mock_client_cls):
             "sgt_loss_q": "2.0",
             "sgt_loss_sigma": "1.0",
             "sgt_loss_p": "2.0",
+            "exp_transform": "False",
         },
         metrics={
             "best_train_smape": 10.5,
@@ -106,6 +109,7 @@ def test_collect_single_run(mock_client_cls):
     assert row["run_name"] == "fancy-fox-123"
     assert row["experiment_name"] == "normal_run_1"
     assert row["dataset"] == "normal"
+    assert row["exp_transform"] == "False"
     assert row["status"] == "FINISHED"
     assert row["random_state"] == 42
     assert row["model_type"] == "transformer"

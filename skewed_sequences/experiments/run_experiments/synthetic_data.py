@@ -25,6 +25,8 @@ def main(
     num_epochs: int = 100,
     early_stopping_patience: int = 20,
     num_workers: int = 0,
+    exp_transform: bool = False,
+    exp_scale: float = 0.1,
 ):
     dataset_path = PROCESSED_DATA_DIR / "synthetic_dataset.npy"
     dataset_configs = SYNTHETIC_DATA_CONFIGS
@@ -38,10 +40,21 @@ def main(
         q = ds_config["q"]
         sigma = ds_config["sigma"]
         base_experiment_name = ds_config["experiment_name"]
+        if exp_transform:
+            base_experiment_name = f"exp-{base_experiment_name}"
 
-        typer.echo(f"==== Generating dataset with lam={lam}, q={q}, sigma={sigma} ====")
+        typer.echo(
+            f"==== Generating dataset with lam={lam}, q={q}, sigma={sigma}, exp_transform={exp_transform} ===="
+        )
 
-        generate_data_main(lam=lam, q=q, sigma=sigma, n_sequences=n_sequences)
+        generate_data_main(
+            lam=lam,
+            q=q,
+            sigma=sigma,
+            n_sequences=n_sequences,
+            exp_transform=exp_transform,
+            exp_scale=exp_scale,
+        )
 
         typer.echo("Dataset generation complete.\n")
 
@@ -74,6 +87,7 @@ def main(
                         num_epochs=num_epochs,
                         early_stopping_patience=early_stopping_patience,
                         num_workers=num_workers,
+                        exp_transform=exp_transform,
                     )
                 else:
                     train_main(
@@ -88,6 +102,7 @@ def main(
                         num_epochs=num_epochs,
                         early_stopping_patience=early_stopping_patience,
                         num_workers=num_workers,
+                        exp_transform=exp_transform,
                     )
                 typer.echo(f"==== Completed training: {experiment_name} ====\n")
 
