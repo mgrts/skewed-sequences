@@ -183,6 +183,12 @@ _register_lazy(
 )
 _register_lazy(
     experiments_app,
+    "skewed_sequences.experiments.collect_results",
+    name="collect-results",
+    help="Collect MLflow experiment results into CSV.",
+)
+_register_lazy(
+    experiments_app,
     "skewed_sequences.experiments.calculate_dispersion_scaling",
     name="dispersion-scaling",
     help="Compute dispersion scaling.",
