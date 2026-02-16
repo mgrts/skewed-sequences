@@ -52,8 +52,11 @@ def _make_experiment(experiment_id, name):
     return exp
 
 
-def _make_run(params, metrics, start_time=1700000000000, status="FINISHED"):
+def _make_run(
+    params, metrics, start_time=1700000000000, status="FINISHED", run_name="fancy-fox-123"
+):
     run = MagicMock()
+    run.info.run_name = run_name
     run.info.start_time = start_time
     run.info.status = status
     run.data.params = params
@@ -96,7 +99,8 @@ def test_collect_single_run(mock_client_cls):
 
     assert len(df) == 1
     row = df.iloc[0]
-    assert row["name"] == "normal_run_1"
+    assert row["run_name"] == "fancy-fox-123"
+    assert row["experiment_name"] == "normal_run_1"
     assert row["dataset"] == "normal"
     assert row["status"] == "FINISHED"
     assert row["random_state"] == 42

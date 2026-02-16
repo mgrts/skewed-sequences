@@ -34,9 +34,9 @@ def collect_experiment_results(tracking_uri: str = TRACKING_URI) -> pd.DataFrame
     """Collect all experiment results from MLflow into a DataFrame.
 
     Returns a DataFrame with columns:
-        name, created_at, status, random_state, output_length, stride,
-        dataset, loss_type, sgt_loss_lambda, sgt_loss_q, sgt_loss_sigma,
-        best_train_smape, best_val_smape
+        run_name, experiment_name, created_at, status, random_state,
+        output_length, stride, dataset, loss_type, sgt_loss_lambda,
+        sgt_loss_q, sgt_loss_sigma, best_train_smape, best_val_smape
     """
     client = MlflowClient(tracking_uri=tracking_uri)
 
@@ -57,7 +57,8 @@ def collect_experiment_results(tracking_uri: str = TRACKING_URI) -> pd.DataFrame
                 metrics = run.data.metrics
                 rows.append(
                     {
-                        "name": exp_name,
+                        "run_name": run.info.run_name,
+                        "experiment_name": exp_name,
                         "created_at": datetime.fromtimestamp(
                             run.info.start_time / 1000, tz=timezone.utc
                         ),

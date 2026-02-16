@@ -4,7 +4,6 @@ from skewed_sequences.config import (
     CONTEXT_LENGTH,
     DATA_DIR,
     FIGURES_DIR,
-    MODELS_DIR,
     N_RUNS,
     OUTPUT_LENGTH,
     PROCESSED_DATA_DIR,
@@ -24,7 +23,6 @@ def test_proj_root_exists():
 def test_path_hierarchy():
     assert DATA_DIR == PROJ_ROOT / "data"
     assert PROCESSED_DATA_DIR == DATA_DIR / "processed"
-    assert MODELS_DIR == PROJ_ROOT / "models"
     assert FIGURES_DIR == PROJ_ROOT / "reports" / "figures"
 
 

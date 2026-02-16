@@ -1,4 +1,5 @@
 from pathlib import Path
+import tempfile
 
 from loguru import logger
 import mlflow
@@ -8,7 +9,6 @@ import typer
 
 from skewed_sequences.config import (
     CONTEXT_LENGTH,
-    MODELS_DIR,
     OUTPUT_LENGTH,
     PROCESSED_DATA_DIR,
     SEED,
@@ -133,11 +133,8 @@ def main(
     mlflow.set_tracking_uri(TRACKING_URI)
     mlflow.set_experiment(experiment_name)
 
-    with mlflow.start_run() as run:
-        run_id = run.info.run_id
-        output_dir = MODELS_DIR / run_id
-        output_dir.mkdir(parents=True, exist_ok=True)
-        model_save_path = output_dir / "model.pt"
+    with mlflow.start_run(), tempfile.TemporaryDirectory() as tmp_dir:
+        model_save_path = Path(tmp_dir) / "model.pt"
 
         mlflow.log_params(
             {
