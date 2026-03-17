@@ -84,15 +84,28 @@ TRAINING_CONFIGS = [
     # NOTE: p=1.0 is invalid here (q^p=1.3 < 2/p=2, so B3 is undefined).
     _sgt_config(p=2.0, q=1.3, s=1.0),
     _sgt_config(p=1.5, q=1.3, s=1.0),
-    # --- q=2.5: logarithmic regime ---
+    # --- q=2.5 to 20.0: uniform grid with step 2.5 ---
     _sgt_config(p=2.0, q=2.5, s=1.0),
     _sgt_config(p=1.5, q=2.5, s=1.0),
     _sgt_config(p=1.0, q=2.5, s=1.0),
-    # --- q=5: intermediate ---
     _sgt_config(p=2.0, q=5.0, s=1.0),
     _sgt_config(p=1.5, q=5.0, s=1.0),
     _sgt_config(p=1.0, q=5.0, s=1.0),
-    # --- q=20: power-law regime ---
+    _sgt_config(p=2.0, q=7.5, s=1.0),
+    _sgt_config(p=1.5, q=7.5, s=1.0),
+    _sgt_config(p=1.0, q=7.5, s=1.0),
+    _sgt_config(p=2.0, q=10.0, s=1.0),
+    _sgt_config(p=1.5, q=10.0, s=1.0),
+    _sgt_config(p=1.0, q=10.0, s=1.0),
+    _sgt_config(p=2.0, q=12.5, s=1.0),
+    _sgt_config(p=1.5, q=12.5, s=1.0),
+    _sgt_config(p=1.0, q=12.5, s=1.0),
+    _sgt_config(p=2.0, q=15.0, s=1.0),
+    _sgt_config(p=1.5, q=15.0, s=1.0),
+    _sgt_config(p=1.0, q=15.0, s=1.0),
+    _sgt_config(p=2.0, q=17.5, s=1.0),
+    _sgt_config(p=1.5, q=17.5, s=1.0),
+    _sgt_config(p=1.0, q=17.5, s=1.0),
     _sgt_config(p=2.0, q=20.0, s=1.0),
     _sgt_config(p=1.5, q=20.0, s=1.0),
     _sgt_config(p=1.0, q=20.0, s=1.0),

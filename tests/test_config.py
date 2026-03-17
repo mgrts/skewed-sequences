@@ -45,7 +45,7 @@ def test_synthetic_data_configs():
 
 
 def test_training_configs():
-    assert len(TRAINING_CONFIGS) == 16
+    assert len(TRAINING_CONFIGS) == 31
     for cfg in TRAINING_CONFIGS:
         assert "loss_type" in cfg
         assert "output_length" in cfg
