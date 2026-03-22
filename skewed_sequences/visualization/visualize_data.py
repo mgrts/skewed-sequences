@@ -29,6 +29,7 @@ from pathlib import Path
 from loguru import logger
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import typer
 
 from skewed_sequences.config import (
@@ -190,7 +191,10 @@ def _save_individual_samples(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    samples_dict: dict[str, np.ndarray] = {}
     for rank, idx in enumerate(indices, start=1):
+        samples_dict[f"sample_{rank:03d}"] = data[idx]
+
         fig, ax = plt.subplots(figsize=(12, 4))
         ax.plot(data[idx], linewidth=0.9, color=COLORS["primary"])
         ax.set_title(f"{title_prefix} — sample {rank:03d}", fontsize=11)
@@ -201,6 +205,13 @@ def _save_individual_samples(
         path = output_dir / f"sample_{rank:03d}.png"
         fig.savefig(path)
         plt.close(fig)
+
+    # Save raw data as CSV (timestep rows × sample columns)
+    df = pd.DataFrame(samples_dict)
+    df.index.name = "timestep"
+    csv_path = output_dir / "samples.csv"
+    df.to_csv(csv_path)
+    logger.info(f"  Raw data → {csv_path}")
 
     logger.info(f"  {n_to_plot} images → {output_dir}")
     return n_to_plot

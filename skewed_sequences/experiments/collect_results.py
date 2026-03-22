@@ -31,7 +31,10 @@ def _derive_dataset(experiment_name: str) -> str:
     return name
 
 
-def collect_experiment_results(tracking_uri: str = TRACKING_URI) -> pd.DataFrame:
+def collect_experiment_results(
+    tracking_uri: str = TRACKING_URI,
+    since: datetime | None = None,
+) -> pd.DataFrame:
     """Collect all experiment results from MLflow into a DataFrame.
 
     Returns a DataFrame with columns:
@@ -45,6 +48,12 @@ def collect_experiment_results(tracking_uri: str = TRACKING_URI) -> pd.DataFrame
     experiments = client.search_experiments(view_type=ViewType.ALL)
     exp_id_to_name = {exp.experiment_id: exp.name for exp in experiments}
 
+    filter_parts = []
+    if since is not None:
+        since_ms = int(since.timestamp() * 1000)
+        filter_parts.append(f"attributes.start_time >= {since_ms}")
+    filter_string = " AND ".join(filter_parts) if filter_parts else ""
+
     rows = []
     for experiment_id, exp_name in exp_id_to_name.items():
         page_token = None
@@ -52,6 +61,7 @@ def collect_experiment_results(tracking_uri: str = TRACKING_URI) -> pd.DataFrame
             page = client.search_runs(
                 experiment_ids=[experiment_id],
                 run_view_type=ViewType.ALL,
+                filter_string=filter_string,
                 page_token=page_token,
             )
             for run in page:
@@ -111,12 +121,19 @@ def collect_experiment_results(tracking_uri: str = TRACKING_URI) -> pd.DataFrame
 @app.command()
 def main(
     output_path: Path = REPORTS_DIR / "experiment_results.csv",
+    since: str | None = typer.Option(
+        None, help="Only include runs started on or after this date (YYYY-MM-DD)."
+    ),
 ):
     """Collect all MLflow experiment results and save to CSV."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    since_dt = None
+    if since is not None:
+        since_dt = datetime.strptime(since, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+
     typer.echo("Collecting experiment results from MLflow...")
-    df = collect_experiment_results()
+    df = collect_experiment_results(since=since_dt)
     df.to_csv(output_path, index=False)
     typer.echo(f"Saved {len(df)} runs to {output_path}")
 
