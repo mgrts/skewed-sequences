@@ -173,3 +173,9 @@ reports/
 
 mlruns/
 mlruns.db
+
+# Saved model artefacts (training writes checkpoints here before logging to MLflow)
+/models/
+
+# Claude Code: commit shared config (skills/hooks/agents/settings.json), ignore personal overrides
+.claude/settings.local.json
