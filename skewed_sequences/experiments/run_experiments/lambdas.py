@@ -1,7 +1,11 @@
 import typer
 
 from skewed_sequences.config import (
+    BATCH_SIZE,
     CONTEXT_LENGTH,
+    EARLY_STOPPING_PATIENCE,
+    NUM_EPOCHS,
+    NUM_WORKERS,
     OUTPUT_LENGTH,
     PROCESSED_DATA_DIR,
     SGT_LOSS_LAMBDAS,
@@ -12,10 +16,10 @@ from skewed_sequences.modeling.train import main as train_main
 
 def main(
     stride: int = STRIDE,
-    batch_size: int = 32,
-    num_epochs: int = 100,
-    early_stopping_patience: int = 20,
-    num_workers: int = 0,
+    batch_size: int = BATCH_SIZE,
+    num_epochs: int = NUM_EPOCHS,
+    early_stopping_patience: int = EARLY_STOPPING_PATIENCE,
+    num_workers: int = NUM_WORKERS,
 ):
     """
     Runs training experiments for each value in SGT_LOSS_LAMBDAS.

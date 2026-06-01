@@ -24,8 +24,11 @@ and offer a tag). There is **no issue tracker** — never invent ticket referenc
 - **Conventional Commits**: `type(scope): subject`. Types: `feat`, `fix`, `refactor`,
   `perf`, `test`, `docs`, `chore`, `build`, `ci`. Scope is optional but encouraged
   (e.g. `loss`, `models`, `train`, `data`, `cli`, `config`, `experiments`, `viz`).
-- Do **NOT** add `Co-Authored-By` or any AI-attribution trailer (matches the team's
-  convention). To change this, edit Step 7.
+- **NEVER** list Claude among commit authors. Do not add a `Co-Authored-By` trailer,
+  set `--author` to Claude/Anthropic, use an `@anthropic.com` address, or add a
+  "Generated with Claude" line — to the commit message OR a PR body. This is a hard
+  project rule, not a default: the `guard_git` PreToolUse hook **blocks** any `git
+  commit` carrying such attribution, so a slip is denied rather than committed.
 - Do **NOT** use `--force`, `--no-verify`, or any destructive git flag. The repo's
   guard-git hook will block these anyway. If a step fails, stop and ask the user.
 

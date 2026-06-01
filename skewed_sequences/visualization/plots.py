@@ -28,6 +28,7 @@ def create_boxplot(data_dict: dict, output_path: Path, title: str, xlim: int):
     plt.xlim(-xlim, xlim)
 
     plt.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path)
     plt.close()
 
@@ -51,15 +52,18 @@ def synthetic(
 
     datasets = {}
 
+    diagnostic_path = PROCESSED_DATA_DIR / "diagnostic_synthetic_dataset.npy"
     for params in dataset_params:
         generate_data_main(
+            output_path=diagnostic_path,
             lam=params["lam"],
             q=params["q"],
             sigma=params["sigma"],
             n_sequences=sample_size,
             apply_smoothing=False,
+            standardize=False,  # raw generative distribution; don't clobber training data
         )
-        data = np.load(PROCESSED_DATA_DIR / "synthetic_dataset.npy").flatten()
+        data = np.load(diagnostic_path).flatten()
         datasets[params["label"]] = data
         logger.info(f'Generated dataset: {params["label"]}')
 

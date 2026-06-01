@@ -19,6 +19,9 @@ def save_dispersion_csv(metric_array: np.ndarray, label: str, output_dir: Path) 
     csv_path = output_dir / f"{label}_dispersion_scaling.csv"
 
     df = pd.DataFrame(metric_array, columns=["log_n", "log_Mn_over_M1", "Kappa_1n", "M1", "Mn"])
+    # Row i holds the metrics for aggregation level n=i+1 (row 0 is the n=1 NaN
+    # placeholder), so label the index by the true aggregation level.
+    df.index = np.arange(1, len(df) + 1)
     df.to_csv(csv_path, index_label="n")
 
     logger.info(f"Dispersion CSV saved to {csv_path}")
@@ -61,6 +64,10 @@ def main(
 ):
     output_dir = Path(output_dir)
 
+    # Write the diagnostic (unsmoothed, sub-sampled) regeneration to a DISTINCT
+    # path so it never clobbers the real training dataset at synthetic_dataset.npy.
+    diagnostic_path = PROCESSED_DATA_DIR / "diagnostic_synthetic_dataset.npy"
+
     # --- Synthetic Datasets ---
     for config in SYNTHETIC_DATA_CONFIGS:
         lam, q, sigma = config["lam"], config["q"], config["sigma"]
@@ -68,9 +75,15 @@ def main(
 
         typer.echo(f"Generating synthetic dataset for {experiment_name}...")
         generate_data_main(
-            lam=lam, q=q, sigma=sigma, n_sequences=sample_size, apply_smoothing=False
+            output_path=diagnostic_path,
+            lam=lam,
+            q=q,
+            sigma=sigma,
+            n_sequences=sample_size,
+            apply_smoothing=False,
+            standardize=False,  # measure the raw generative distribution
         )
-        data = np.load(PROCESSED_DATA_DIR / "synthetic_dataset.npy")
+        data = np.load(diagnostic_path)
 
         process_and_save_dispersion(data, experiment_name, output_dir, num_values)
 

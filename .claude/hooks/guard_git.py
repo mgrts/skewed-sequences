@@ -5,6 +5,9 @@ Blocks (exit 2 -> tool call denied, stderr shown to the agent):
   - force pushes (git push --force / -f)   [--force-with-lease is allowed]
   - git push --no-verify
   - git commit --no-verify / -n
+  - git commit carrying Claude/AI author attribution (Co-Authored-By / --author /
+    "Generated with Claude" / @anthropic.com) — project convention: Claude is NEVER
+    listed among commit authors
   - git reset --hard
   - deleting the main branch (local `git branch -D main` or remote `push --delete`/`:main`)
 
@@ -18,6 +21,17 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _gitutil import has_short_flag, is_main_ref, parse_git_invocations  # noqa: E402
+
+# AI/Claude AUTHORSHIP attribution only — deliberately NOT a bare "claude" match, so a
+# legitimate topical subject like `feat(claude): ...` is never blocked.
+AI_ATTRIBUTION = re.compile(
+    r"co-authored-by:[^\r\n]*(?:claude|anthropic)"
+    r"|--author[=\s][^\r\n]*(?:claude|anthropic)"
+    r"|noreply@anthropic\.com"
+    r"|@anthropic\.com"
+    r"|generated with[^\r\n]*claude",
+    re.IGNORECASE,
+)
 
 
 def deny(what: str, why: str) -> int:
@@ -38,6 +52,18 @@ def main() -> int:
     cmd = (data.get("tool_input") or {}).get("command", "")
     if not cmd:
         return 0
+
+    # Block Claude/AI author attribution on ANY git commit, independent of how the
+    # message is supplied (multiple -m, heredoc, embedded newlines). Uses a loose
+    # commit detector so a newline-containing message can't dodge the strict parser.
+    if AI_ATTRIBUTION.search(cmd) and re.search(r"\bgit\b[^\n]*\bcommit\b", cmd):
+        return deny(
+            "git commit with Claude/AI author attribution",
+            "This project's convention is that Claude is NEVER listed among commit "
+            "authors. Remove any 'Co-Authored-By: Claude/Anthropic' trailer, '--author' "
+            "set to Claude/Anthropic, '@anthropic.com' address, or 'Generated with "
+            "Claude' line from the commit message.",
+        )
 
     for sub, subargs in parse_git_invocations(cmd):
         if sub == "push":

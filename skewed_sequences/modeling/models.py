@@ -55,7 +55,10 @@ class TransformerWithPE(nn.Module):
         )
 
         self.output_layer = nn.Linear(embed_dim, out_dim)
-        self.register_buffer("cached_mask", None)
+        # Non-persistent: the cache is a derived lookup table, not a learned
+        # parameter. Persisting it would add/remove a state_dict key depending on
+        # whether forward() has run, breaking load_state_dict into a fresh model.
+        self.register_buffer("cached_mask", None, persistent=False)
 
     def _generate_square_subsequent_mask(self, sz: int) -> Tensor:
         if self.cached_mask is None or self.cached_mask.size(0) < sz:
@@ -63,21 +66,41 @@ class TransformerWithPE(nn.Module):
             self.cached_mask = mask
         return self.cached_mask[:sz, :sz]
 
-    def forward(self, src: Tensor, tgt: Tensor) -> Tensor:
+    def _run_decoder(self, src: Tensor, decoder_in: Tensor) -> Tensor:
+        """Encode ``src`` and decode an already-shifted ``decoder_in``.
+
+        ``decoder_in`` position i is the token used to predict output position i;
+        no internal shift happens here, so this op is shared verbatim by the
+        teacher-forced ``forward`` and the autoregressive ``infer``.
         """
+        src = self.pos_encoding(self.encoder_embed(src))
+        decoder_in = self.pos_encoding(self.decoder_embed(decoder_in))
+
+        tgt_mask = self._generate_square_subsequent_mask(decoder_in.size(1)).to(decoder_in.device)
+
+        output = self.transformer(src, decoder_in, tgt_mask=tgt_mask)
+        return self.output_layer(output)
+
+    def forward(self, src: Tensor, tgt: Tensor) -> Tensor:
+        """Teacher-forced forward with a one-step-shifted decoder input.
+
+        The decoder is seeded with the last observed context value and fed the
+        *previous* ground-truth targets, so output position i predicts ``tgt[i]``
+        from ``tgt[<i]`` (and ``src``) only — never from ``tgt[i]`` itself. This
+        matches the generation process in ``infer`` and removes the otherwise
+        trivial copy of the decoder input (which, at OUTPUT_LENGTH=1, would leak
+        the single value being predicted).
+
         Args:
             src: (B, src_len, in_dim)
             tgt: (B, tgt_len, out_dim)
         Returns:
             Tensor: (B, tgt_len, out_dim)
         """
-        src = self.pos_encoding(self.encoder_embed(src))
-        tgt = self.pos_encoding(self.decoder_embed(tgt))
-
-        tgt_mask = self._generate_square_subsequent_mask(tgt.size(1)).to(tgt.device)
-
-        output = self.transformer(src, tgt, tgt_mask=tgt_mask)
-        return self.output_layer(output)
+        out_dim = self.output_layer.out_features
+        seed = src[:, -1:, :out_dim]  # last observed value, (B, 1, out_dim)
+        decoder_in = torch.cat([seed, tgt[:, :-1, :]], dim=1)  # shift right by one
+        return self._run_decoder(src, decoder_in)
 
     def infer(self, src: Tensor, tgt_len: int) -> Tensor:
         """
@@ -87,16 +110,15 @@ class TransformerWithPE(nn.Module):
         Returns:
             Tensor: (B, tgt_len, out_dim)
         """
-        B, _, in_dim = src.shape
         out_dim = self.output_layer.out_features
 
-        decoder_input = torch.zeros(B, 1, out_dim, device=src.device)
-        decoder_input[:, 0] = src[:, -1, :out_dim]  # Use last known input as first token
+        # Seed from the last observed value — the same seed the shifted forward
+        # uses for output position 0.
+        decoder_input = src[:, -1:, :out_dim]  # (B, 1, out_dim)
 
         outputs = []
-
         for _ in range(tgt_len):
-            next_token = self.forward(src, decoder_input)[:, -1:]  # shape (B, 1, out_dim)
+            next_token = self._run_decoder(src, decoder_input)[:, -1:]  # (B, 1, out_dim)
             decoder_input = torch.cat([decoder_input, next_token], dim=1)
             outputs.append(next_token)
 
@@ -113,9 +135,15 @@ class LSTM(nn.Module):
         """
         Autoregressive LSTM decoder, mimicking Transformer-style causal decoding.
 
+        Uses one-step-shifted teacher forcing: the decoder is seeded with the
+        last observed context step and then fed the *previous* ground-truth
+        target, so step t predicts ``tgt[:,t]`` from ``tgt[:,t-1]`` (or the seed)
+        — never from ``tgt[:,t]`` itself. This matches ``infer`` and avoids the
+        identity leak of feeding ``tgt[:,t]`` to predict ``tgt[:,t]``.
+
         Args:
             src: (B, src_len, input_dim)
-            tgt: (B, tgt_len, output_dim) — target sequence used for step-by-step decoding (teacher forcing)
+            tgt: (B, tgt_len, output_dim) — ground-truth targets for teacher forcing
 
         Returns:
             Tensor: (B, tgt_len, output_dim)
@@ -128,18 +156,18 @@ class LSTM(nn.Module):
         c0 = torch.zeros_like(h0)
         _, (h, c) = self.lstm(src, (h0, c0))  # Only get final hidden and cell states
 
-        # Initialize input to decoder as the first token of the target (e.g., zeros or a GO token)
+        # Seed the decoder with the last observed context step (same as infer()).
         outputs = []
-        input_t = tgt[:, 0].unsqueeze(1)  # (B, 1, input_dim)
+        input_t = src[:, -1:, :]  # (B, 1, input_dim)
 
         for t in range(tgt_len):
             out, (h, c) = self.lstm(input_t, (h, c))  # Step input
             pred = self.fc(out)  # (B, 1, output_dim)
             outputs.append(pred)
 
-            # Use teacher forcing — next input is ground truth
+            # Teacher forcing — next input is the ground-truth target at step t.
             if t + 1 < tgt_len:
-                input_t = tgt[:, t + 1].unsqueeze(1)
+                input_t = tgt[:, t].unsqueeze(1)
 
         return torch.cat(outputs, dim=1)  # (B, tgt_len, output_dim)
 

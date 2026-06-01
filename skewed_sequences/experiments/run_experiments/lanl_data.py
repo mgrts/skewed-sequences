@@ -4,13 +4,17 @@ import random
 import typer
 
 from skewed_sequences.config import (
-    CONTEXT_LENGTH,
+    BATCH_SIZE,
+    EARLY_STOPPING_PATIENCE,
+    MODEL_TYPES,
     N_RUNS,
+    NUM_EPOCHS,
+    NUM_WORKERS,
     PROCESSED_DATA_DIR,
     STRIDE,
     TRAINING_CONFIGS,
 )
-from skewed_sequences.modeling.train import main as train_main
+from skewed_sequences.experiments.run_experiments._runner import run_training_config
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -20,10 +24,10 @@ def main(
     n_runs: int = N_RUNS,
     dataset_name: str = "lanl_sequences.npy",
     stride: int = STRIDE,
-    batch_size: int = 32,
-    num_epochs: int = 100,
-    early_stopping_patience: int = 20,
-    num_workers: int = 0,
+    batch_size: int = BATCH_SIZE,
+    num_epochs: int = NUM_EPOCHS,
+    early_stopping_patience: int = EARLY_STOPPING_PATIENCE,
+    num_workers: int = NUM_WORKERS,
 ):
     """
     Run multiple training experiments on the LANL dataset.
@@ -32,7 +36,7 @@ def main(
     dataset_path: Path = PROCESSED_DATA_DIR / dataset_name
     training_configs = TRAINING_CONFIGS
 
-    total_experiments = len(training_configs) * n_runs
+    total_experiments = len(training_configs) * n_runs * len(MODEL_TYPES)
     experiment_counter = 0
 
     typer.echo(f"==== Using dataset: {dataset_path.name} ====")
@@ -41,49 +45,31 @@ def main(
         loss_type = train_config["loss_type"]
 
         for run_idx in range(1, n_runs + 1):
-            experiment_counter += 1
-            experiment_seed = random.randint(0, 2**32 - 1)
-            experiment_name = f"lanl_{loss_type}_run_{run_idx}"
+            for model_type in MODEL_TYPES:
+                experiment_counter += 1
+                experiment_seed = random.randint(0, 2**32 - 1)
+                experiment_name = f"lanl_{loss_type}_run_{run_idx}"
 
-            typer.echo(
-                f"==== [{experiment_counter}/{total_experiments}] Starting training: {experiment_name} "
-                f"with loss_type={loss_type}, seed={experiment_seed} ===="
-            )
-
-            if loss_type.lower() == "sgt":
-                train_main(
-                    dataset_path=dataset_path,
-                    loss_type=loss_type,
-                    sgt_loss_lambda=train_config["sgt_loss_lambda"],
-                    sgt_loss_q=train_config["sgt_loss_q"],
-                    sgt_loss_sigma=train_config["sgt_loss_sigma"],
-                    sgt_loss_p=train_config["sgt_loss_p"],
-                    output_length=train_config.get("output_length", 5),
-                    context_length=CONTEXT_LENGTH,
-                    stride=stride,
-                    experiment_name=experiment_name,
-                    seed=experiment_seed,
-                    batch_size=batch_size,
-                    num_epochs=num_epochs,
-                    early_stopping_patience=early_stopping_patience,
-                    num_workers=num_workers,
+                typer.echo(
+                    f"==== [{experiment_counter}/{total_experiments}] Starting training: "
+                    f"{experiment_name} with model={model_type}, loss_type={loss_type}, "
+                    f"seed={experiment_seed} ===="
                 )
-            else:
-                train_main(
+
+                run_training_config(
+                    train_config,
                     dataset_path=dataset_path,
-                    loss_type=loss_type,
-                    output_length=train_config.get("output_length", 5),
-                    context_length=CONTEXT_LENGTH,
-                    stride=stride,
                     experiment_name=experiment_name,
                     seed=experiment_seed,
+                    model_type=model_type,
+                    stride=stride,
                     batch_size=batch_size,
                     num_epochs=num_epochs,
                     early_stopping_patience=early_stopping_patience,
                     num_workers=num_workers,
                 )
 
-            typer.echo(f"==== Completed training: {experiment_name} ====\n")
+                typer.echo(f"==== Completed training: {experiment_name} ({model_type}) ====\n")
 
 
 if __name__ == "__main__":

@@ -8,19 +8,25 @@ import torch
 import typer
 
 from skewed_sequences.config import (
+    BATCH_SIZE,
     CONTEXT_LENGTH,
+    EARLY_STOPPING_PATIENCE,
+    LEARNING_RATE,
+    NUM_EPOCHS,
+    NUM_WORKERS,
     OUTPUT_LENGTH,
     PROCESSED_DATA_DIR,
     SEED,
     STRIDE,
     TRACKING_URI,
 )
+from skewed_sequences.mlflow_contract import SUMMARY_METRIC_STEMS, summary_metric_key
 from skewed_sequences.modeling.data_processing import create_dataloaders
 from skewed_sequences.modeling.evaluation import log_val_predictions
 from skewed_sequences.modeling.loss_functions import CauchyLoss, HuberLoss, SGTLoss, TukeyLoss
 from skewed_sequences.modeling.models import LSTM, TransformerWithPE
 from skewed_sequences.modeling.trainer import train_model
-from skewed_sequences.modeling.utils import set_seed
+from skewed_sequences.modeling.utils import persistence_metrics, residual_scale_estimate, set_seed
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -31,7 +37,15 @@ def get_loss_function(
     sgt_loss_q: float = 2.0,
     sgt_loss_sigma: float = 1.0,
     sgt_loss_p: float = 2.0,
+    residual_scale: float = 1.0,
 ):
+    """Build the criterion.
+
+    The robust baselines (Cauchy/Huber/Tukey) scale their thresholds by
+    ``residual_scale`` (a robust estimate of the residual spread) using the
+    classic 95%-efficiency tuning constants, so they actually enter their robust
+    regime instead of collapsing to MSE at this data scale.
+    """
     loss_type = loss_type.lower()
     if loss_type == "sgt":
         return SGTLoss(
@@ -42,11 +56,11 @@ def get_loss_function(
     elif loss_type == "mae":
         return torch.nn.L1Loss()
     elif loss_type == "cauchy":
-        return CauchyLoss(gamma=2.0)
+        return CauchyLoss(gamma=(2.3849 * residual_scale) ** 2)
     elif loss_type == "huber":
-        return HuberLoss(delta=1.0)
+        return HuberLoss(delta=1.345 * residual_scale)
     elif loss_type == "tukey":
-        return TukeyLoss(c=4.685)
+        return TukeyLoss(c=4.685 * residual_scale)
     else:
         raise ValueError(f"Unsupported loss type: {loss_type}")
 
@@ -61,14 +75,14 @@ def main(
     embed_dim: int = 64,
     num_heads: int = 4,
     num_layers: int = 4,
-    batch_size: int = 32,
-    num_epochs: int = 100,
-    learning_rate: float = 1e-4,
+    batch_size: int = BATCH_SIZE,
+    num_epochs: int = NUM_EPOCHS,
+    learning_rate: float = LEARNING_RATE,
     test_split: float = 0.1,
     val_split: float = 0.1,
     seed: int = SEED,
-    early_stopping_patience: int = 20,
-    num_workers: int = 0,
+    early_stopping_patience: int = EARLY_STOPPING_PATIENCE,
+    num_workers: int = NUM_WORKERS,
     loss_type: str = "sgt",
     sgt_loss_sigma: float = 1.0,
     sgt_loss_lambda: float = 0.0,
@@ -93,6 +107,11 @@ def main(
         f"context_length ({context_length}) + output_length ({output_length}) "
         f"exceeds sequence length ({data.shape[1]})"
     )
+
+    # Robust scale of the 1-step increments — sets the robust-loss thresholds so
+    # they bracket the residual bulk/tail instead of behaving like MSE.
+    residual_scale = residual_scale_estimate(data)
+    logger.info(f"Residual-scale estimate (MAD-based): {residual_scale:.4f}")
 
     train_loader, val_loader, test_loader, val_data_raw = create_dataloaders(
         data=data,
@@ -130,6 +149,7 @@ def main(
         sgt_loss_q=sgt_loss_q,
         sgt_loss_sigma=sgt_loss_sigma,
         sgt_loss_p=sgt_loss_p,
+        residual_scale=residual_scale,
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -161,10 +181,11 @@ def main(
                 "val_split": val_split,
                 "exp_transform": exp_transform,
                 "random_state": seed,
+                "residual_scale": residual_scale,
             }
         )
 
-        best_val_loss, best_train_metrics, best_val_metrics, best_test_metrics = train_model(
+        best_val_mae, best_train_metrics, best_val_metrics, best_test_metrics = train_model(
             model=model,
             train_loader=train_loader,
             val_loader=val_loader,
@@ -176,16 +197,29 @@ def main(
             early_stopping_patience=early_stopping_patience,
         )
 
-        mlflow.log_metrics(
-            {
-                "best_train_smape": best_train_metrics.get("smape"),
-                "best_train_mape": best_train_metrics.get("mape"),
-                "best_val_smape": best_val_metrics.get("smape"),
-                "best_val_mape": best_val_metrics.get("mape"),
-                "best_test_smape": best_test_metrics.get("smape"),
-                "best_test_mape": best_test_metrics.get("mape"),
-            }
-        )
+        best_metrics_by_split = {
+            "train": best_train_metrics,
+            "val": best_val_metrics,
+            "test": best_test_metrics,
+        }
+        summary_metrics = {
+            summary_metric_key(split, stem): metrics.get(stem)
+            for split, metrics in best_metrics_by_split.items()
+            for stem in SUMMARY_METRIC_STEMS
+        }
+
+        # Naive last-value (persistence) baseline + MASE on the test split, so the
+        # headroom of the model over the trivial forecaster is visible.
+        naive = persistence_metrics(test_loader, device)
+        naive_mae = naive["mae"]
+        baseline_metrics = {
+            "best_test_naive_rmse": naive["rmse"],
+            "best_test_naive_mae": naive_mae,
+            "best_test_mase": (
+                (best_test_metrics["mae"] / naive_mae) if naive_mae else float("nan")
+            ),
+        }
+        mlflow.log_metrics({**summary_metrics, **baseline_metrics})
 
         log_val_predictions(
             model,

@@ -70,21 +70,21 @@ def create_dataloaders(
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        pin_memory=True,
+        pin_memory=torch.cuda.is_available(),
         persistent_workers=persistent,
     )
     val_loader = DataLoader(
         SlidingWindowDataset(val_data, context_len, output_len, stride),
         batch_size=batch_size,
         num_workers=num_workers,
-        pin_memory=True,
+        pin_memory=torch.cuda.is_available(),
         persistent_workers=persistent,
     )
     test_loader = DataLoader(
         SlidingWindowDataset(test_data, context_len, output_len, stride),
         batch_size=batch_size,
         num_workers=num_workers,
-        pin_memory=True,
+        pin_memory=torch.cuda.is_available(),
         persistent_workers=persistent,
     )
 

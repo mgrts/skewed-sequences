@@ -10,6 +10,7 @@ import pandas as pd
 import typer
 
 from skewed_sequences.config import REPORTS_DIR, TRACKING_URI
+from skewed_sequences.mlflow_contract import ALL_SUMMARY_METRIC_KEYS
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -67,31 +68,32 @@ def collect_experiment_results(
             for run in page:
                 params = run.data.params
                 metrics = run.data.metrics
-                rows.append(
-                    {
-                        "run_name": run.info.run_name,
-                        "experiment_name": exp_name,
-                        "created_at": datetime.fromtimestamp(
-                            run.info.start_time / 1000, tz=timezone.utc
-                        ),
-                        "status": run.info.status,
-                        "random_state": params.get("random_state", params.get("seed")),
-                        "model_type": params.get("model_type"),
-                        "context_length": params.get("context_length"),
-                        "output_length": params.get("output_length"),
-                        "stride": params.get("stride"),
-                        "exp_transform": params.get("exp_transform"),
-                        "dataset": _derive_dataset(exp_name),
-                        "loss_type": params.get("loss_type"),
-                        "sgt_loss_lambda": params.get("sgt_loss_lambda"),
-                        "sgt_loss_q": params.get("sgt_loss_q"),
-                        "sgt_loss_sigma": params.get("sgt_loss_sigma"),
-                        "sgt_loss_p": params.get("sgt_loss_p"),
-                        "best_train_smape": metrics.get("best_train_smape"),
-                        "best_val_smape": metrics.get("best_val_smape"),
-                        "best_test_smape": metrics.get("best_test_smape"),
-                    }
-                )
+                row = {
+                    "run_name": run.info.run_name,
+                    "experiment_name": exp_name,
+                    "created_at": datetime.fromtimestamp(
+                        run.info.start_time / 1000, tz=timezone.utc
+                    ),
+                    "status": run.info.status,
+                    "random_state": params.get("random_state", params.get("seed")),
+                    "model_type": params.get("model_type"),
+                    "context_length": params.get("context_length"),
+                    "output_length": params.get("output_length"),
+                    "stride": params.get("stride"),
+                    "exp_transform": params.get("exp_transform"),
+                    "dataset": _derive_dataset(exp_name),
+                    "loss_type": params.get("loss_type"),
+                    "sgt_loss_lambda": params.get("sgt_loss_lambda"),
+                    "sgt_loss_q": params.get("sgt_loss_q"),
+                    "sgt_loss_sigma": params.get("sgt_loss_sigma"),
+                    "sgt_loss_p": params.get("sgt_loss_p"),
+                    "residual_scale": params.get("residual_scale"),
+                }
+                # All summary keys: best_{split}_{smape,mape,rmse,mae} + persistence
+                # baseline (best_test_naive_*) + best_test_mase.
+                for key in ALL_SUMMARY_METRIC_KEYS:
+                    row[key] = metrics.get(key)
+                rows.append(row)
             page_token = page.token if hasattr(page, "token") else None
             if not page_token:
                 break
@@ -108,9 +110,8 @@ def collect_experiment_results(
             "sgt_loss_q",
             "sgt_loss_sigma",
             "sgt_loss_p",
-            "best_train_smape",
-            "best_val_smape",
-            "best_test_smape",
+            "residual_scale",
+            *ALL_SUMMARY_METRIC_KEYS,
         ]
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors="coerce")

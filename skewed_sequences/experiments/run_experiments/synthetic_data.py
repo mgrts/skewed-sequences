@@ -3,15 +3,19 @@ import random
 import typer
 
 from skewed_sequences.config import (
-    CONTEXT_LENGTH,
+    BATCH_SIZE,
+    EARLY_STOPPING_PATIENCE,
+    MODEL_TYPES,
     N_RUNS,
+    NUM_EPOCHS,
+    NUM_WORKERS,
     PROCESSED_DATA_DIR,
     STRIDE,
     SYNTHETIC_DATA_CONFIGS,
     TRAINING_CONFIGS,
 )
 from skewed_sequences.data.synthetic.generate_data import main as generate_data_main
-from skewed_sequences.modeling.train import main as train_main
+from skewed_sequences.experiments.run_experiments._runner import run_training_config
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -21,10 +25,10 @@ def main(
     n_runs: int = N_RUNS,
     n_sequences: int = 10000,
     stride: int = STRIDE,
-    batch_size: int = 32,
-    num_epochs: int = 100,
-    early_stopping_patience: int = 20,
-    num_workers: int = 0,
+    batch_size: int = BATCH_SIZE,
+    num_epochs: int = NUM_EPOCHS,
+    early_stopping_patience: int = EARLY_STOPPING_PATIENCE,
+    num_workers: int = NUM_WORKERS,
     exp_transform: bool = False,
     exp_scale: float = 0.1,
 ):
@@ -32,25 +36,28 @@ def main(
     dataset_configs = SYNTHETIC_DATA_CONFIGS
     training_configs = TRAINING_CONFIGS
 
-    total_experiments = len(dataset_configs) * len(training_configs) * n_runs
+    total_experiments = len(dataset_configs) * len(training_configs) * n_runs * len(MODEL_TYPES)
     experiment_counter = 0
 
     for ds_config in dataset_configs:
         lam = ds_config["lam"]
         q = ds_config["q"]
         sigma = ds_config["sigma"]
+        kernel_size = ds_config.get("kernel_size", 99)
         base_experiment_name = ds_config["experiment_name"]
         if exp_transform:
             base_experiment_name = f"exp-{base_experiment_name}"
 
         typer.echo(
-            f"==== Generating dataset with lam={lam}, q={q}, sigma={sigma}, exp_transform={exp_transform} ===="
+            f"==== Generating dataset with lam={lam}, q={q}, sigma={sigma}, "
+            f"kernel_size={kernel_size}, exp_transform={exp_transform} ===="
         )
 
         generate_data_main(
             lam=lam,
             q=q,
             sigma=sigma,
+            kernel_size=kernel_size,
             n_sequences=n_sequences,
             exp_transform=exp_transform,
             exp_scale=exp_scale,
@@ -62,49 +69,31 @@ def main(
             loss_type = train_config["loss_type"]
 
             for run_idx in range(1, n_runs + 1):
-                experiment_counter += 1
-                experiment_seed = random.randint(0, 2**32 - 1)
-                experiment_name = f"{base_experiment_name}_run_{run_idx}"
+                for model_type in MODEL_TYPES:
+                    experiment_counter += 1
+                    experiment_seed = random.randint(0, 2**32 - 1)
+                    experiment_name = f"{base_experiment_name}_run_{run_idx}"
 
-                typer.echo(
-                    f"==== [{experiment_counter}/{total_experiments}] Starting training: {experiment_name} with loss_type={loss_type}, seed={experiment_seed} ===="
-                )
+                    typer.echo(
+                        f"==== [{experiment_counter}/{total_experiments}] Starting training: "
+                        f"{experiment_name} with model={model_type}, loss_type={loss_type}, "
+                        f"seed={experiment_seed} ===="
+                    )
 
-                if loss_type.lower() == "sgt":
-                    train_main(
+                    run_training_config(
+                        train_config,
                         dataset_path=dataset_path,
-                        loss_type=loss_type,
-                        sgt_loss_lambda=train_config["sgt_loss_lambda"],
-                        sgt_loss_q=train_config["sgt_loss_q"],
-                        sgt_loss_sigma=train_config["sgt_loss_sigma"],
-                        sgt_loss_p=train_config["sgt_loss_p"],
-                        output_length=train_config.get("output_length", 5),
-                        context_length=CONTEXT_LENGTH,
-                        stride=stride,
                         experiment_name=experiment_name,
                         seed=experiment_seed,
+                        model_type=model_type,
+                        stride=stride,
                         batch_size=batch_size,
                         num_epochs=num_epochs,
                         early_stopping_patience=early_stopping_patience,
                         num_workers=num_workers,
                         exp_transform=exp_transform,
                     )
-                else:
-                    train_main(
-                        dataset_path=dataset_path,
-                        loss_type=loss_type,
-                        output_length=train_config.get("output_length", 5),
-                        context_length=CONTEXT_LENGTH,
-                        stride=stride,
-                        experiment_name=experiment_name,
-                        seed=experiment_seed,
-                        batch_size=batch_size,
-                        num_epochs=num_epochs,
-                        early_stopping_patience=early_stopping_patience,
-                        num_workers=num_workers,
-                        exp_transform=exp_transform,
-                    )
-                typer.echo(f"==== Completed training: {experiment_name} ====\n")
+                    typer.echo(f"==== Completed training: {experiment_name} ({model_type}) ====\n")
 
 
 if __name__ == "__main__":

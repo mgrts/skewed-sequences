@@ -41,17 +41,37 @@ except ModuleNotFoundError:
 
 N_RUNS = 10
 
+# Model architectures swept by every grid runner.
+MODEL_TYPES = ("transformer", "lstm")
+
+# Training-loop defaults — the single source of truth shared by ``train.main``
+# and every grid runner. Do NOT inline copies in the runners; import these.
+BATCH_SIZE = 32
+NUM_EPOCHS = 100
+LEARNING_RATE = 1e-4
+EARLY_STOPPING_PATIENCE = 20
+NUM_WORKERS = 0
+
 SGT_LOSS_LAMBDAS = [-0.1, -0.01, -0.001, -0.0001, 0.0, 0.0001, 0.001, 0.01, 0.1]
 
 # Single-step prediction horizon.
 OUTPUT_LENGTH = 1
 
 SYNTHETIC_DATA_CONFIGS = [
-    # q values use q^p reparameterization (old q=100 → new q=10 with p=2)
-    {"lam": 0.0, "q": 10.0, "sigma": 0.707, "experiment_name": "normal"},
-    {"lam": 0.0, "q": 1.0005, "sigma": 15.0, "experiment_name": "heavy-tailed"},
-    {"lam": 0.9, "q": 10.0, "sigma": 0.707, "experiment_name": "normal-skewed"},
-    {"lam": 0.9, "q": 1.0005, "sigma": 15.0, "experiment_name": "heavy-tailed-skewed"},
+    # q values use q^p reparameterization (old q=100 → new q=10 with p=2).
+    # kernel_size controls smoothing: heavy-tailed configs use a lighter kernel so
+    # the one-step innovation retains heavy-tailed kurtosis (otherwise smoothing
+    # makes the 1-step horizon near-deterministic).
+    {"lam": 0.0, "q": 10.0, "sigma": 0.707, "experiment_name": "normal", "kernel_size": 99},
+    {"lam": 0.0, "q": 1.0005, "sigma": 15.0, "experiment_name": "heavy-tailed", "kernel_size": 15},
+    {"lam": 0.9, "q": 10.0, "sigma": 0.707, "experiment_name": "normal-skewed", "kernel_size": 99},
+    {
+        "lam": 0.9,
+        "q": 1.0005,
+        "sigma": 15.0,
+        "experiment_name": "heavy-tailed-skewed",
+        "kernel_size": 15,
+    },
 ]
 
 # SGT loss parameter grid (q^p reparameterization, lambda=0, s=1 fixed).
@@ -68,13 +88,13 @@ SYNTHETIC_DATA_CONFIGS = [
 # For q=1.3, p=1.0 is invalid (1.3 < 2.0), so only p={1.5, 2.0} are used.
 
 
-def _sgt_config(p, q, s):
+def _sgt_config(p, q, s, lam=0.0):
     return {
         "loss_type": "sgt",
         "sgt_loss_p": p,
         "sgt_loss_q": q,
         "sgt_loss_sigma": s,
-        "sgt_loss_lambda": 0.0,
+        "sgt_loss_lambda": lam,
         "output_length": OUTPUT_LENGTH,
     }
 
@@ -109,6 +129,14 @@ TRAINING_CONFIGS = [
     _sgt_config(p=2.0, q=20.0, s=1.0),
     _sgt_config(p=1.5, q=20.0, s=1.0),
     _sgt_config(p=1.0, q=20.0, s=1.0),
+    # --- Skewed SGT (nonzero lambda): exercises the asymmetric loss the SGT is
+    # named for, so the skewed datasets (lam=0.9) are fit with a skewed loss.
+    # lambda=0.9 matches the data skew; 0.5 traces the response. Anchored at a
+    # light-tail (q=10) and a heavy-tail (q=2.5) point. ---
+    _sgt_config(p=2.0, q=10.0, s=1.0, lam=0.5),
+    _sgt_config(p=2.0, q=10.0, s=1.0, lam=0.9),
+    _sgt_config(p=2.0, q=2.5, s=1.0, lam=0.5),
+    _sgt_config(p=2.0, q=2.5, s=1.0, lam=0.9),
     # --- Classical baselines ---
     {"loss_type": "mse", "output_length": OUTPUT_LENGTH},
     {"loss_type": "mae", "output_length": OUTPUT_LENGTH},

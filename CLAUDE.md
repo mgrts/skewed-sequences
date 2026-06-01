@@ -11,8 +11,7 @@ Everything is driven through a single `skseq` Typer CLI.
 ## Package map
 
 - `skewed_sequences/cli.py` — single Typer entry point (`skseq`). Registers all
-  sub-apps **lazily** via `_register_lazy` / `_LazyTyper`. (`_lazy_typer` near the
-  top is dead/legacy — not used.)
+  sub-apps **lazily** via `_register_lazy` / `_LazyTyper`.
 - `skewed_sequences/config.py` — single source of truth for constants and
   experiment grids. Eagerly imported by `__init__.py`, so it runs on **every** CLI
   call — keep it lightweight.
@@ -21,7 +20,7 @@ Everything is driven through a single `skseq` Typer CLI.
     expose `forward(src, tgt)` (teacher-forced) and `infer(src, tgt_len)` (autoregressive).
   - `loss_functions.py` — `SGTLoss` (asymmetric) + `CauchyLoss` / `HuberLoss` / `TukeyLoss` (symmetric).
   - `train.py` — CLI entry (`main`) + `get_loss_function` factory + device selection + MLflow run.
-  - `trainer.py` — epoch loop, checkpointing, per-epoch MLflow metric logging.
+  - `trainer.py` — epoch loop, per-epoch MLflow logging, checkpoint/early-stop on **val MAE**.
   - `utils.py` — `set_seed`, `train_epoch`, `evaluate`, `compute_metrics`, `EarlyStopping`.
   - `data_processing.py` — `SlidingWindowDataset`, `create_dataloaders`.
   - `evaluation.py` — `sliding_window_predictions`, `log_val_predictions`.
@@ -30,12 +29,16 @@ Everything is driven through a single `skseq` Typer CLI.
 - `skewed_sequences/experiments/`
   - `run_experiments/{synthetic,lanl,owid_covid,rvr_us}_data.py` — grid-sweep runners (Typer).
     `lambdas.py` is an **unregistered** run-by-hand script (no `_register_lazy` entry).
+  - `run_experiments/_runner.py` — shared `run_training_config` helper (one `train.main` call site).
   - `collect_results.py` — reads MLflow back into `reports/experiment_results.csv`.
+  - `aggregate_results.py` — replicate summary stats + SGT-vs-baseline Mann-Whitney into `reports/experiment_summary.csv`.
   - `calculate_metrics.py`, `calculate_dispersion_scaling.py` — analysis scripts.
 - `skewed_sequences/visualization/` — `style.py`, `predictions.py`, `plots.py`,
   `visualize_data.py`, `visualize_losses.py` (NumPy reimplementation of the SGT loss).
 - `skewed_sequences/metrics.py` — skewness / kappa / dispersion metrics.
-- `tests/` — one `test_<module>.py` per source module; plain pytest, no `conftest.py` (**98 tests**).
+- `skewed_sequences/mlflow_contract.py` — single source of the MLflow param/metric key names.
+- `skewed_sequences/data/_common.py` — shared loader helpers (`slice_array_to_chunks`, `scale_and_stack`).
+- `tests/` — one `test_<module>.py` per source module; plain pytest, no `conftest.py` (**141 tests**).
 
 ## How to run
 
@@ -48,6 +51,7 @@ skseq train main --loss-type mse
 skseq data generate-synthetic main
 skseq experiments run-synthetic main
 skseq experiments collect-results main      # MLflow -> reports/experiment_results.csv
+skseq experiments aggregate-results main    # results.csv -> summary + SGT-vs-baseline tests
 skseq visualize-losses main
 
 # `visualize` and `plots` have named subcommands (no `main`):
@@ -72,9 +76,10 @@ Make targets: `make test` (pytest) · `make lint` (flake8 + isort --check + blac
    wrong dotted path/attr fails when the command runs, not at `--help`. Smoke-test
    new commands with `skseq <group> <cmd> --help`.
 3. **`OUTPUT_LENGTH=1` single-step horizon.** Every `TRAINING_CONFIGS` dict MUST
-   carry an explicit `output_length` key, because all 4 runners read
-   `train_config.get("output_length", 5)` — the magic-`5` fallback silently switches
-   the horizon if the key is dropped (no error). `test_config.py` asserts
+   carry an explicit `output_length` key. The 4 runners delegate to
+   `run_experiments/_runner.py:run_training_config`, which reads
+   `train_config.get("output_length", OUTPUT_LENGTH)` — the old magic-`5` fallback is
+   gone (the fallback is now the correct horizon, in one place). `test_config.py` asserts
    `output_length == OUTPUT_LENGTH` for every entry.
 4. **Window must fit the data.** `CONTEXT_LENGTH(200) + OUTPUT_LENGTH(1) <= SEQUENCE_LENGTH(300)`.
    `train.py` asserts `context_length + output_length <= data.shape[1]` — the ONLY
@@ -83,18 +88,21 @@ Make targets: `make test` (pytest) · `make lint` (flake8 + isort --check + blac
    `create_dataloaders`.
 5. **`config.py` is the single source of truth.** `SEED=927, SEQUENCE_LENGTH=300,
    CONTEXT_LENGTH=200, OUTPUT_LENGTH=1, STRIDE=1, N_RUNS=10, TRACKING_URI`. These are
-   imported as Typer parameter defaults. Runner training-loop literals
-   `batch_size=32 / num_epochs=100 / early_stopping_patience=20 / num_workers=0` are
-   hard-coded in all 5 runner files (synthetic/lanl/owid/rvr + `lambdas.py`) and must
-   stay in sync with `train.main` defaults. (The `output_length` magic-5 fallback in
-   invariant #3 lives only in the 4 grid runners; `lambdas.py` passes `OUTPUT_LENGTH`
-   directly.) Edit `config.py`, never inline copies. Tests pin counts (**4** synthetic
-   configs, **31** training configs) and the constant literals.
-6. **MLflow key contract.** The param/metric string keys logged in `train.main` are an
-   untyped contract read by `collect_results.py` (literal `.get()`) and mocked in
-   `test_collect_results.py`. The seed is logged as `random_state` (NOT `seed`);
-   summary metrics are `best_{train,val,test}_{smape,mape}`. A rename on either side
-   silently produces NaN CSV columns with no failing test.
+   imported as Typer parameter defaults. Runner training-loop defaults now also live in
+   `config.py` (`BATCH_SIZE=32 / NUM_EPOCHS=100 / LEARNING_RATE=1e-4 /
+   EARLY_STOPPING_PATIENCE=20 / NUM_WORKERS=0`) and are imported by `train.main` and
+   every runner — no inline copies. Every runner also sweeps `MODEL_TYPES =
+   (transformer, lstm)`. Edit `config.py`, never inline copies. Tests pin counts (**4**
+   synthetic configs, **35** training configs — 26 symmetric SGT + **4 skewed (nonzero-λ)
+   SGT** + 5 classical) and the constant literals.
+6. **MLflow key contract.** Param/metric key names live ONCE in
+   `skewed_sequences/mlflow_contract.py` and are imported by both `train.main` (producer)
+   and `collect_results.py` (consumer); `test_mlflow_contract.py` pins that what
+   `train.main` logs matches. The seed is logged as `random_state` (NOT `seed`); summary
+   metrics are `best_{train,val,test}_{smape,mape,rmse,mae}` plus the persistence baseline
+   `best_test_naive_{rmse,mae}` and `best_test_mase`, with a `residual_scale` param.
+   `collect_results` reads `ALL_SUMMARY_METRIC_KEYS`. On standardized/zero-mean data prefer
+   `rmse`/`mae`/`mase` — the percentage metrics are dominated by near-zero targets.
 7. **Seed/reproducibility reality.** `set_seed` seeds `torch` + `numpy` (+cuda) but
    NOT Python's `random`, NOR MPS, NOR cudnn. Runners draw per-run seeds with
    `random.randint` (Python `random`, never seeded), so a run is reproducible ONLY via
@@ -104,22 +112,28 @@ Make targets: `make test` (pytest) · `make lint` (flake8 + isort --check + blac
    `utils.py` (`train_epoch` / `evaluate`) calls `criterion(output, tgt)`. `SGTLoss` is
    the only asymmetric loss:
    `diff = target - input + m`, skew `(1 + lam*sign(diff))**p`; swapping the args flips
-   the skew **silently** (untested — every grid config uses `lam=0.0`). Symmetric
-   losses use `input - target`.
+   the skew **silently**. The grid now includes skewed (`lam>0`) SGT configs, and
+   `test_sgt_consistency.py` covers `lam != 0`. Symmetric losses use `input - target`.
 9. **SGT math contracts.** `qp = q**p` everywhere; validity requires `q**p > 2/p` else
-   `scipy.special.beta` returns NaN with no exception (why `p=1.0` is omitted for low
-   `q`). The scale constant `v` uses **raw `q`** (`1/q`), NOT `qp` — intentional, and it
-   matches `visualize_losses.sgt_loss()`. Keep the three `eps` guards. Any SGT formula
-   edit must be **mirrored** between `loss_functions.py` and the NumPy duplicate in
-   `visualize_losses.py` (no shared code/test ties them).
+   `scipy.special.beta` returns a negative value or +inf and the loss becomes NaN/inf —
+   `SGTLoss.__init__` now asserts `q**p > 2/p` to fail fast (so `p=1.0` is omitted for low
+   `q`). The scale constant `v` uses **raw `q`** (`1/q`), NOT `qp` — intentional. Keep the
+   three `eps` guards. The SGT math is reimplemented in three places (`loss_functions.py`,
+   `generate_data.py`'s `SkewedGeneralizedT.pdf`, `visualize_losses.sgt_loss`); any formula
+   edit must be **mirrored** — `test_sgt_consistency.py` pins their numerical agreement.
 10. **Model shape / autoregressive contracts.** All tensors are batch-first
     `(B, seq, features)`; both models use `batch_first=True`; `forward`/`infer` return
-    `(B, tgt_len, out_dim)`. `infer` seeds from the last input step, excludes the seed
-    token, returns exactly `tgt_len` steps. Keep the causal `tgt_mask` (and its
-    `.to(tgt.device)`) in `forward` — dropping it leaks future tokens (low train loss,
-    garbage inference, no test failure). Model tests only assert shape + isfinite.
+    `(B, tgt_len, out_dim)`. `forward` uses **one-step-shifted teacher forcing**: it seeds
+    the decoder from `src[:, -1]` and feeds the *previous* targets, so it never sees the
+    value being scored (the Transformer shares `_run_decoder` with `infer`). Do NOT revert
+    to feeding raw `tgt` as the decoder input — that leaks the answer at OUTPUT_LENGTH=1.
+    `infer` seeds from the last input step, excludes the seed token, returns exactly
+    `tgt_len` steps; keep the causal `tgt_mask`. `test_models.py` pins that perturbing the
+    scored target does not change `forward`'s output.
 11. **Data leakage / normalization.** Per-sequence `StandardScaler().fit_transform`
-    happens inside each loader's per-entity loop BEFORE stacking/splitting.
+    happens inside each real loader's per-entity loop BEFORE stacking/splitting (now via
+    `data/_common.scale_and_stack`). The synthetic generator also standardizes per
+    sequence (`standardize=True`, the default; diagnostic/plot callers pass `False`).
     `create_dataloaders` splits at the SEQUENCE level (test first, then val) with
     `val_relative = val_split / (1 - test_split)`. Never add a global scaler in
     `data_processing.py`, never split at the window level.
@@ -150,19 +164,22 @@ Make targets: `make test` (pytest) · `make lint` (flake8 + isort --check + blac
   to both `generate_data` and `train`.
 - Classical (non-SGT) runs still log default `sgt_loss_q` / `sgt_loss_p` — filter on
   `loss_type == "sgt"` before using `sgt_loss_*` columns.
-- `calculate_metrics.py` / `calculate_dispersion_scaling.py` **regenerate** shared
-  training `.npy` files with `apply_smoothing=False`, `sample_size=1000` — running them
-  clobbers real training datasets. Regenerate before the next training run.
+- `calculate_metrics.py` / `calculate_dispersion_scaling.py` regenerate synthetic data
+  with `apply_smoothing=False`, `sample_size=1000`, but now write to
+  `diagnostic_synthetic_dataset.npy` so they no longer clobber the real
+  `synthetic_dataset.npy`. (They still regenerate `rvr_us_data.npy` in place.)
 - Experiment names MUST end in `_run_<int>`; `collect_results._derive_dataset` strips
   it via `re.sub(r"_run_\d+$", "")` and special-cases the `lanl_` prefix. New naming ⇒
   update the regex and add a `test_collect_results` case.
 - `plots.py` reads hardcoded `.npy` basenames; load failures are swallowed by
-  try/except + `logger.warning` (green run, missing figure). `plots.py` does not
-  `mkdir` `FIGURES_DIR` (unlike the other viz modules).
-- `slice_array_to_chunks` is copy-pasted verbatim across owid/rvr/health/lanl loaders —
-  fix all copies together.
-- `compute_metrics(predictions, targets)` — MAPE denominator is `|target|` (asymmetric);
-  sMAPE is the headline metric. Swapping arg order is silent.
+  try/except + `logger.warning` (green run, missing figure). It now `mkdir`s the figure
+  dir before `savefig` (like the other viz modules).
+- `slice_array_to_chunks` + the per-chunk scale/stack now live ONCE in `data/_common.py`
+  (`scale_and_stack`); the four loaders import them. Chunks are **non-overlapping** (the
+  short trailing remainder is dropped) to avoid leaking timesteps across the split.
+- `compute_metrics(predictions, targets)` returns `smape/mape/rmse/mae`. MAPE denominator
+  is `|target|` (asymmetric); on standardized/zero-mean targets the percentage metrics are
+  dominated by near-zero targets, so prefer `rmse`/`mae`. Swapping arg order is silent.
 
 ## What NOT to commit
 

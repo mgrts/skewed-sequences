@@ -3,28 +3,12 @@ from pathlib import Path
 from loguru import logger
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
 import typer
 
 from skewed_sequences.config import EXTERNAL_DATA_DIR, PROCESSED_DATA_DIR, SEQUENCE_LENGTH
+from skewed_sequences.data._common import scale_and_stack, slice_array_to_chunks
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
-
-
-def slice_array_to_chunks(array, chunk_size=300):
-    n = len(array)
-    n_slices = (n + chunk_size - 1) // chunk_size  # ceil(n / chunk_size)
-    chunks = []
-
-    for i in range(n_slices):
-        start = i * chunk_size
-        end = start + chunk_size
-        if end > n:
-            end = n
-            start = max(0, n - chunk_size)
-        chunks.append(array[start:end])
-
-    return np.array(chunks)
 
 
 @app.command()
@@ -51,24 +35,18 @@ def main(
         lambda x: x.rolling(window=rolling_window, min_periods=1).mean()
     )
 
-    sequences = []
+    chunks = []
     participant_ids = data["participant_id"].unique()
 
     for participant_id in participant_ids:
         ts_data = data[data["participant_id"] == participant_id][f"smoothed_{time_series}"].values
+        chunks.extend(slice_array_to_chunks(ts_data, sequence_length))
 
-        if len(ts_data) >= sequence_length:
-            chunks = slice_array_to_chunks(ts_data, sequence_length)
-
-            for chunk in chunks:
-                chunk_scaled = StandardScaler().fit_transform(chunk.reshape(-1, 1)).reshape(-1)
-                sequences.append(chunk_scaled)
-
-    sequences = np.vstack(sequences)
-    sequences = sequences[..., np.newaxis]
+    sequences = scale_and_stack(chunks, sequence_length)
 
     logger.info("Saving processed data")
 
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "wb") as f:
         np.save(f, sequences)
 

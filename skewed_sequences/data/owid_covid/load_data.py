@@ -31,6 +31,8 @@ def download_file_with_progress(url: str, dest_path: Path, chunk_size: int = 102
 
     total_size = int(response.headers.get("content-length", 0))
 
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+
     with tqdm(
         total=total_size, unit="iB", unit_scale=True, desc="Downloading"
     ) as progress_bar, open(dest_path, "wb") as file:

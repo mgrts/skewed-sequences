@@ -3,7 +3,6 @@ from pathlib import Path
 from loguru import logger
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
 import typer
 
 from skewed_sequences.config import (
@@ -12,30 +11,9 @@ from skewed_sequences.config import (
     SEED,
     SEQUENCE_LENGTH,
 )
+from skewed_sequences.data._common import scale_and_stack, slice_array_to_chunks
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
-
-
-def slice_array_to_chunks(array: np.ndarray, chunk_size: int) -> np.ndarray:
-    """
-    Slice a 1D array into fixed-length chunks.
-    The last chunk is left-aligned if insufficient length remains.
-    """
-    n = len(array)
-    n_slices = (n + chunk_size - 1) // chunk_size
-    chunks = []
-
-    for i in range(n_slices):
-        start = i * chunk_size
-        end = start + chunk_size
-
-        if end > n:
-            end = n
-            start = max(0, n - chunk_size)
-
-        chunks.append(array[start:end])
-
-    return np.array(chunks)
 
 
 def random_sample(
@@ -88,19 +66,8 @@ def main(
 
     logger.info(f"Number of sequences: {len(chunks):,}")
 
-    sequences = []
-    scaler = StandardScaler()
-
     logger.info("Scaling sequences")
-    for chunk in chunks:
-        if len(chunk) < sequence_length:
-            continue  # safety guard
-
-        chunk_scaled = scaler.fit_transform(chunk.reshape(-1, 1)).reshape(-1)
-        sequences.append(chunk_scaled)
-
-    sequences = np.vstack(sequences)
-    sequences = sequences[..., np.newaxis]  # (N, T, 1)
+    sequences = scale_and_stack(chunks, sequence_length)  # (N, T, 1)
 
     logger.info(f"Final dataset shape: {sequences.shape}")
 

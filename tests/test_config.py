@@ -45,7 +45,7 @@ def test_synthetic_data_configs():
 
 
 def test_training_configs():
-    assert len(TRAINING_CONFIGS) == 31
+    assert len(TRAINING_CONFIGS) == 35
     for cfg in TRAINING_CONFIGS:
         assert "loss_type" in cfg
         assert "output_length" in cfg
@@ -57,3 +57,11 @@ def test_training_configs():
             assert "sgt_loss_lambda" in cfg
     loss_types = {c["loss_type"] for c in TRAINING_CONFIGS}
     assert loss_types == {"sgt", "mse", "mae", "cauchy", "huber", "tukey"}
+
+    # The SGT skew sweep must be present (the asymmetric loss is actually exercised).
+    sgt_lambdas = {c["sgt_loss_lambda"] for c in TRAINING_CONFIGS if c["loss_type"] == "sgt"}
+    assert sgt_lambdas != {0.0}, "expected at least one nonzero-lambda (skewed) SGT config"
+    # Every SGT config must satisfy the validity domain q**p > 2/p.
+    for c in TRAINING_CONFIGS:
+        if c["loss_type"] == "sgt":
+            assert c["sgt_loss_q"] ** c["sgt_loss_p"] > 2.0 / c["sgt_loss_p"]

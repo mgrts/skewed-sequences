@@ -179,3 +179,7 @@ mlruns.db
 
 # Claude Code: commit shared config (skills/hooks/agents/settings.json), ignore personal overrides
 .claude/settings.local.json
+# Runtime lock written by the scheduled-tasks / autonomous-loop machinery — not project state
+.claude/scheduled_tasks.lock
+# Stray MLflow sqlite DB (project tracking lives in mlruns.db, already ignored)
+mlflow.db

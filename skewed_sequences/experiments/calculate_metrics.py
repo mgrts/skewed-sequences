@@ -21,7 +21,9 @@ def skewness_of_diff(x: np.ndarray) -> float:
 
 @app.command()
 def main(sample_size: int = 1000, n_for_kappa: int = 10):
-    synthetic_path = PROCESSED_DATA_DIR / "synthetic_dataset.npy"
+    # Write the diagnostic (unsmoothed, sub-sampled) regeneration to a DISTINCT
+    # path so it never clobbers the real training dataset at synthetic_dataset.npy.
+    synthetic_path = PROCESSED_DATA_DIR / "diagnostic_synthetic_dataset.npy"
     rvr_path = PROCESSED_DATA_DIR / "rvr_us_data.npy"
     owid_path = PROCESSED_DATA_DIR / "dataset.npy"
 
@@ -38,7 +40,13 @@ def main(sample_size: int = 1000, n_for_kappa: int = 10):
 
         typer.echo(f"Generating dataset for {experiment_name}...")
         generate_data_main(
-            lam=lam, q=q, sigma=sigma, n_sequences=sample_size, apply_smoothing=False
+            output_path=synthetic_path,
+            lam=lam,
+            q=q,
+            sigma=sigma,
+            n_sequences=sample_size,
+            apply_smoothing=False,
+            standardize=False,  # measure the raw generative distribution
         )
 
         data = np.load(synthetic_path)

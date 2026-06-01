@@ -3,7 +3,6 @@ from pathlib import Path
 from loguru import logger
 import numpy as np
 from scipy.special import beta
-from scipy.stats import t
 import typer
 
 from skewed_sequences.config import PROCESSED_DATA_DIR, SEED, SEQUENCE_LENGTH
@@ -31,6 +30,9 @@ def cosine_kernel(size, period):
 
 
 def gaussian_kernel(size, sigma):
+    # The arange grid is only symmetric/centered for odd sizes; an even size
+    # yields a half-sample phase shift (off-center kernel).
+    assert size % 2 == 1, f"kernel_size must be odd for a centered kernel, got {size}"
     x = np.arange(-size // 2 + 1.0, size // 2 + 1.0)
     kernel = np.exp(-0.5 * (x / sigma) ** 2)
     return safe_normalize(kernel)
@@ -43,7 +45,13 @@ def combined_cosine_gaussian_kernel(size, sigma, period):
 
 
 def filter1d_with_kernel(data, kernel):
-    return np.convolve(data, kernel, mode="same")
+    # Renormalize by the partial kernel weight at each position so the
+    # zero-padding implied by mode="same" does not pull the boundary samples
+    # toward zero (a normalized kernel still loses mass where it overhangs the
+    # signal edges). Interior weights are ~1, so only the edges are corrected.
+    smoothed = np.convolve(data, kernel, mode="same")
+    norm = np.convolve(np.ones_like(data), kernel, mode="same")
+    return smoothed / norm
 
 
 def smooth_sequence(sequence, smoothing_type, kernel_size, sigma, period):
@@ -104,15 +112,30 @@ class SkewedGeneralizedT:
         return self.norm_const * bracket ** (-(1 / self.p + self.qp))
 
     def rvs(self, size=1):
-        samples = []
-        # Use pdf at mu - m as a rough upper bound for rejection sampling
-        max_pdf = self.pdf(self.mu - self.m)
-        while len(samples) < size:
-            x_candidate = t.rvs(df=2 * self.qp, size=1) * self.sigma + self.mu
-            y = np.random.uniform(0, max_pdf)
-            if y < self.pdf(x_candidate):
-                samples.append(x_candidate[0])
-        return np.array(samples)
+        """Sample via a numerically-integrated inverse CDF.
+
+        Inverse-transform sampling is robust for any ``(p, q, lam)``: unlike
+        rejection sampling there is no proposal envelope to blow up. A symmetric
+        Student-t proposal cannot envelope a heavy *skewed* tail (e.g. the
+        ``normal-skewed`` config q=10, lam=0.9 needs an envelope ~1e40 and never
+        terminates), so the previous rejection scheme is replaced here. Faithful
+        to the grid resolution; always terminates.
+        """
+        # Centre the grid on the mode (z = 0 -> x = mu - m) and span it wide
+        # enough to capture essentially all the mass (the tail beyond is clipped,
+        # which only renormalises the CDF by a negligible amount).
+        center = self.mu - self.m
+        half_width = 1000.0 * self.sigma
+        grid = np.linspace(center - half_width, center + half_width, 400_001)
+
+        cdf = np.cumsum(self.pdf(grid))
+        total = cdf[-1]
+        if total <= 0:
+            raise ValueError("SGT pdf integrated to zero over the sampling grid.")
+        cdf = cdf / total  # monotone in [0, 1]
+
+        u = np.random.uniform(0.0, 1.0, size=size)
+        return np.interp(u, cdf, grid)
 
     def generate_sequences(self, n_sequences, sequence_length, n_features=1):
         total_samples = n_sequences * sequence_length * n_features
@@ -138,6 +161,7 @@ def main(
     period: float = 30.0,
     exp_transform: bool = False,
     exp_scale: float = 0.1,
+    standardize: bool = True,
     seed: int = SEED,
 ):
     """Generate synthetic sequences from the SGT distribution.
@@ -182,9 +206,24 @@ def main(
                 else:
                     seq = seq - np.mean(seq)
                 dataset[i, :, j] = np.exp(exp_scale * seq)
+    elif standardize:
+        # Per-sequence standardization (zero-mean, unit-variance), matching the
+        # real-data loaders, so the loss operates on a unit residual scale
+        # (sgt_loss_sigma=1.0, scaled robust thresholds). Diagnostic/plot callers
+        # that want the raw generative distribution pass standardize=False.
+        logger.info("Standardizing each sequence (zero-mean, unit-variance)")
+        for i in range(n_sequences):
+            for j in range(n_features):
+                seq = dataset[i, :, j]
+                std = np.std(seq)
+                if std > 0:
+                    dataset[i, :, j] = (seq - np.mean(seq)) / std
+                else:
+                    dataset[i, :, j] = seq - np.mean(seq)
 
     logger.info(f"Saving dataset to {output_path} with shape {dataset.shape}")
 
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     np.save(output_path, dataset)
 
     logger.success("Dataset generation complete.")

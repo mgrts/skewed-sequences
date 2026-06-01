@@ -60,3 +60,41 @@ class TestInfer:
         out = model.infer(src, tgt_len=1)
         assert out.shape == (1, 1, 1)
         assert torch.isfinite(out).all()
+
+
+class TestNoTargetLeak:
+    """The shifted teacher-forcing protocol must never feed the value being
+    scored into the decoder, so the prediction cannot depend on it."""
+
+    def test_single_step_prediction_independent_of_target(self, model_and_name):
+        model, _ = model_and_name
+        torch.manual_seed(0)
+        src = torch.randn(2, 20, 1)
+        tgt = torch.randn(2, 1, 1)
+        out_a = model(src, tgt)
+        out_b = model(src, tgt + 100.0)  # perturb the only target
+        # OUTPUT_LENGTH=1: the decoder input is the seed alone, so the output is
+        # invariant to the target. (This assertion fails on the leaky version.)
+        assert torch.allclose(out_a, out_b, atol=1e-5)
+
+    def test_last_target_never_fed_to_decoder(self, model_and_name):
+        model, _ = model_and_name
+        torch.manual_seed(0)
+        src = torch.randn(2, 20, 1)
+        tgt = torch.randn(2, 5, 1)
+        out_a = model(src, tgt)
+        tgt2 = tgt.clone()
+        tgt2[:, -1] += 100.0  # the last target is never used as a decoder input
+        out_b = model(src, tgt2)
+        assert torch.allclose(out_a, out_b, atol=1e-5)
+
+    def test_forward_matches_infer_single_step(self, model_and_name):
+        """For OUTPUT_LENGTH=1, teacher-forced forward and autoregressive infer
+        seed from the same value, so they must produce the identical prediction."""
+        model, _ = model_and_name
+        torch.manual_seed(0)
+        src = torch.randn(2, 20, 1)
+        tgt = torch.randn(2, 1, 1)
+        out_forward = model(src, tgt)
+        out_infer = model.infer(src, tgt_len=1)
+        assert torch.allclose(out_forward, out_infer, atol=1e-5)

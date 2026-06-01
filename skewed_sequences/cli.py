@@ -27,20 +27,6 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
-def _lazy_typer(module_path: str, attr: str = "app") -> typer.Typer:
-    """Return a Typer instance that is only imported when the sub-command is
-    invoked.  We create a thin wrapper ``Typer`` whose single callback imports
-    the real app and re-dispatches.
-
-    For ``add_typer`` to work we just need to return the *real* app object, so
-    we do import it — but we do so inside a function called lazily by
-    ``add_typer`` at registration time.  To keep top-level import fast, we
-    instead use a placeholder and swap it in via ``_register_lazy``.
-    """
-    mod = importlib.import_module(module_path)
-    return getattr(mod, attr)
-
-
 def _register_lazy(
     parent: typer.Typer,
     module_path: str,
@@ -186,6 +172,12 @@ _register_lazy(
     "skewed_sequences.experiments.collect_results",
     name="collect-results",
     help="Collect MLflow experiment results into CSV.",
+)
+_register_lazy(
+    experiments_app,
+    "skewed_sequences.experiments.aggregate_results",
+    name="aggregate-results",
+    help="Aggregate replicate runs + SGT-vs-baseline significance tests.",
 )
 _register_lazy(
     experiments_app,

@@ -6,6 +6,14 @@ import torch.nn as nn
 class SGTLoss(nn.Module):
     def __init__(self, p=2.0, q=2.0, lam=0.0, sigma=1.0, eps=1e-6):
         super().__init__()
+        # SGT validity: q**p > 2/p is required for B3 = beta(3/p, q**p - 2/p) to
+        # be defined. Outside this domain beta returns a negative value or +inf,
+        # so v_denom = sqrt(...) silently becomes NaN and the loss is all-NaN/inf
+        # with no exception. Fail fast at construction instead. (All shipped
+        # TRAINING_CONFIGS pairs satisfy this.)
+        assert (
+            q**p > 2.0 / p
+        ), f"SGT validity requires q**p > 2/p, got q**p={q ** p:.4f}, 2/p={2.0 / p:.4f}"
         self.p = p
         self.q = q
         self.lam = lam

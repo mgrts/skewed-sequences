@@ -68,11 +68,13 @@ LANL earthquakes, RVR US hospitalisations, Health & Fitness wearable data).
 │   │   └── utils.py        <- Misc modelling utilities
 │   │
 │   └── experiments/        <- Reproducible experiment runners
-│       ├── run_experiments/ <- Per-dataset experiment scripts
+│       ├── run_experiments/ <- Per-dataset experiment scripts (+ shared _runner.py)
+│       ├── collect_results.py     <- MLflow → results CSV
+│       ├── aggregate_results.py   <- replicate summary + significance
 │       ├── calculate_metrics.py
 │       └── calculate_dispersion_scaling.py
 │
-├── tests/                  <- Pytest test suite (77 tests)
+├── tests/                  <- Pytest test suite (141 tests)
 ├── data/                   <- Raw / interim / processed / external data
 ├── models/                 <- Saved model artefacts
 ├── mlruns/                 <- MLflow tracking store
@@ -239,6 +241,8 @@ poetry run skseq plots main
 | `run-lanl` | LANL earthquake data |
 | `run-owid` | OWID COVID-19 data |
 | `run-rvr` | RVR US hospitalisation data |
+| `collect-results` | Collect MLflow runs into `reports/experiment_results.csv` |
+| `aggregate-results` | Replicate summary stats + SGT-vs-baseline significance tests |
 | `dispersion-scaling` | Compute dispersion-scaling exponents |
 | `metrics` | Compute dataset-level statistical metrics |
 
@@ -312,18 +316,25 @@ make pre-commit  # Run all pre-commit hooks
 
 ### Testing
 
-The test suite (77 tests) lives in `tests/`:
+The test suite (141 tests) lives in `tests/`:
 
 | Module | What it tests |
 |--------|---------------|
-| `test_config.py` | Config constants, paths, experiment configs |
+| `test_config.py` | Config constants, paths, experiment configs (incl. the skew sweep) |
 | `test_metrics.py` | MAD, kappa, skewness, dispersion scaling |
 | `test_loss_functions.py` | All custom loss functions (output shape, gradients, edge cases) |
-| `test_models.py` | Transformer & LSTM forward/infer shapes |
+| `test_sgt_consistency.py` | The three SGT implementations agree numerically |
+| `test_models.py` | Transformer & LSTM forward/infer shapes + no-target-leak |
 | `test_data_processing.py` | SequenceDataset, dataloader creation |
+| `test_data_common.py` | Shared loader slice/scale/stack helpers |
 | `test_generate_data.py` | SGT distribution, kernels, sequence generation |
+| `test_evaluation.py` | Sliding-window prediction logging |
 | `test_cli.py` | CLI help output for all sub-commands |
 | `test_train.py` | Loss function factory & forward pass |
+| `test_runner.py` | Shared grid-runner helper kwarg expansion |
+| `test_mlflow_contract.py` | Producer/consumer MLflow key contract |
+| `test_collect_results.py` | MLflow → CSV collection |
+| `test_aggregate_results.py` | Replicate aggregation + significance |
 
 ```bash
 poetry run pytest          # or: make test
@@ -341,11 +352,13 @@ All experiment parameters live in `skewed_sequences/config.py`:
 | `STRIDE` | 1 | Sliding window stride |
 | `N_RUNS` | 10 | Repetitions per experiment |
 | `SEED` | 927 | Random seed |
+| `MODEL_TYPES` | `(transformer, lstm)` | Architectures swept by every runner |
 
 - **`SYNTHETIC_DATA_CONFIGS`** — defines the four synthetic dataset variants
-  (λ, q, σ combinations)
-- **`TRAINING_CONFIGS`** — 17 training configurations covering SGT parameter
-  sweeps + baseline losses (MSE, MAE, Cauchy, Huber, Tukey)
+  (λ, q, σ, kernel_size combinations)
+- **`TRAINING_CONFIGS`** — 35 training configurations: SGT parameter sweeps
+  (26 symmetric + 4 skewed nonzero-λ) + 5 baseline losses (MSE, MAE, Cauchy,
+  Huber, Tukey)
 - **`SGT_LOSS_LAMBDAS`** — λ values for the SGT loss lambda sweep experiment
 
 ## License
