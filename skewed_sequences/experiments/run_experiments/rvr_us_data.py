@@ -49,12 +49,15 @@ def main(
 
         create_dataset_main(time_series=time_series)
 
-        for training_config in training_configs:
-            for run_idx in range(1, n_runs + 1):
-                for model_type in MODEL_TYPES:
+        # Seed drawn once per (run_idx, model_type) and reused across all loss
+        # configs, so replicates are seed-paired across loss types (paired Wilcoxon).
+        for run_idx in range(1, n_runs + 1):
+            for model_type in MODEL_TYPES:
+                experiment_seed = random.randint(0, 2**32 - 1)
+                experiment_name = f"{experiment_base_name}_run_{run_idx}"
+
+                for training_config in training_configs:
                     experiment_counter += 1
-                    experiment_seed = random.randint(0, 2**32 - 1)
-                    experiment_name = f"{experiment_base_name}_run_{run_idx}"
 
                     typer.echo(
                         f"[{experiment_counter}/{total_experiments}] Starting training: "

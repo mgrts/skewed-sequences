@@ -85,3 +85,41 @@ def skewness(x: np.ndarray) -> float:
         raise ValueError("Standard deviation is zero; skewness is undefined.")
 
     return np.mean((x - mean) ** 3) / (std**3)
+
+
+def hill_estimator(x: np.ndarray, k: int | None = None) -> float:
+    """Hill estimator of the tail index ``alpha`` from the upper-order statistics.
+
+    Uses the ``k`` largest ``|x|`` values::
+
+        gamma = (1/k) * sum_{i=1..k} ( log|x|_(i) - log|x|_(k+1) ),   alpha = 1/gamma
+
+    where ``|x|_(1) >= ... >= |x|_(k+1)`` are the top order statistics. A *smaller*
+    ``alpha`` means heavier tails (``alpha < 2`` implies infinite variance);
+    ``alpha`` grows large for light/Gaussian tails. ``k`` defaults to
+    ``floor(N/10)`` (a common rule of thumb); pass an explicit ``k`` to trade bias
+    against variance.
+
+    Used only for dataset characterization and the SGT ``q``-selection guideline
+    (lower estimated ``alpha`` -> choose a smaller, more heavy-tail-tolerant
+    ``q``); never inside the training loop.
+    """
+    a = np.sort(np.abs(np.asarray(x, dtype=float)))[::-1]
+    a = a[a > 0]
+    n = len(a)
+    if n < 3:
+        raise ValueError("need at least 3 nonzero values for the Hill estimator")
+    if k is None:
+        k = max(1, n // 10)
+    if not (1 <= k < n):
+        raise ValueError(f"k must satisfy 1 <= k < n_nonzero ({n}), got {k}")
+
+    threshold = a[k]  # the (k+1)-th largest |x|
+    if threshold <= 0:
+        raise ValueError("the (k+1)-th order statistic is non-positive; alpha undefined")
+
+    gamma = float(np.mean(np.log(a[:k]) - np.log(threshold)))
+    if gamma <= 0:
+        raise ValueError("non-positive Hill gamma; tail index undefined")
+
+    return 1.0 / gamma

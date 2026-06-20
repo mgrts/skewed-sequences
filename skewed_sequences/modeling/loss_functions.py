@@ -128,3 +128,32 @@ class TukeyLoss(nn.Module):
         elif self.reduction == "mean":
             return loss.mean()
         return loss
+
+
+class CharbonnierLoss(nn.Module):
+    """Charbonnier (pseudo-Huber) loss: a smooth, everywhere-differentiable L1.
+
+    ``L = sqrt(diff**2 + eps**2) - eps``. Quadratic for ``|diff| << eps`` (gradient
+    ``diff/eps``) and linear/MAE-like with bounded unit gradient for
+    ``|diff| >> eps``, with no kink at the origin (unlike Huber/MAE) and ``L(0)=0``
+    so its logged value is comparable to the other baselines. The transition scale
+    ``eps`` is set from the robust residual scale by the loss factory (mirroring
+    Huber's ``delta`` / Tukey's ``c``) so it brackets the residual bulk instead of
+    collapsing to MSE at this data scale.
+    """
+
+    def __init__(self, eps=1.0, reduction="mean"):
+        super().__init__()
+        self.eps = eps
+        self.reduction = reduction
+
+    def forward(self, input, target):
+        diff = input - target
+        # Subtract eps so L(0)=0 (the -eps offset is constant, gradient unchanged).
+        loss = torch.sqrt(diff**2 + self.eps**2) - self.eps
+
+        if self.reduction == "sum":
+            return loss.sum()
+        elif self.reduction == "mean":
+            return loss.mean()
+        return loss

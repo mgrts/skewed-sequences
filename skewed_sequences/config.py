@@ -41,8 +41,10 @@ except ModuleNotFoundError:
 
 N_RUNS = 10
 
-# Model architectures swept by every grid runner.
-MODEL_TYPES = ("transformer", "lstm")
+# Model architectures swept by every grid runner. The IJIMAI revision is
+# transformer-only (the paper studies the loss function's effect on a fixed
+# transformer); the LSTM model class is retained for reference but not swept.
+MODEL_TYPES = ("transformer",)
 
 # Training-loop defaults — the single source of truth shared by ``train.main``
 # and every grid runner. Do NOT inline copies in the runners; import these.
@@ -137,10 +139,11 @@ TRAINING_CONFIGS = [
     _sgt_config(p=2.0, q=10.0, s=1.0, lam=0.9),
     _sgt_config(p=2.0, q=2.5, s=1.0, lam=0.5),
     _sgt_config(p=2.0, q=2.5, s=1.0, lam=0.9),
-    # --- Classical baselines ---
+    # --- Classical baselines (incl. Charbonnier, added per reviewer A5) ---
     {"loss_type": "mse", "output_length": OUTPUT_LENGTH},
     {"loss_type": "mae", "output_length": OUTPUT_LENGTH},
     {"loss_type": "cauchy", "output_length": OUTPUT_LENGTH},
     {"loss_type": "huber", "output_length": OUTPUT_LENGTH},
     {"loss_type": "tukey", "output_length": OUTPUT_LENGTH},
+    {"loss_type": "charbonnier", "output_length": OUTPUT_LENGTH},
 ]

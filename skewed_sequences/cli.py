@@ -169,6 +169,12 @@ _register_lazy(
 )
 _register_lazy(
     experiments_app,
+    "skewed_sequences.experiments.run_experiments.head_attention_data",
+    name="run-head-sweep",
+    help="Run the multi-head attention study (heavy-tailed synthetic).",
+)
+_register_lazy(
+    experiments_app,
     "skewed_sequences.experiments.collect_results",
     name="collect-results",
     help="Collect MLflow experiment results into CSV.",

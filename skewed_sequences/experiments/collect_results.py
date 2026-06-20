@@ -40,9 +40,9 @@ def collect_experiment_results(
 
     Returns a DataFrame with columns:
         run_name, experiment_name, created_at, status, random_state,
-        model_type, context_length, output_length, stride, exp_transform, dataset,
-        loss_type, sgt_loss_lambda, sgt_loss_q, sgt_loss_sigma, sgt_loss_p,
-        best_train_smape, best_val_smape, best_test_smape
+        model_type, context_length, output_length, stride, embed_dim, num_heads,
+        num_layers, exp_transform, dataset, loss_type, sgt_loss_lambda, sgt_loss_q,
+        sgt_loss_sigma, sgt_loss_p, best_train_smape, best_val_smape, best_test_smape
     """
     client = MlflowClient(tracking_uri=tracking_uri)
 
@@ -80,6 +80,9 @@ def collect_experiment_results(
                     "context_length": params.get("context_length"),
                     "output_length": params.get("output_length"),
                     "stride": params.get("stride"),
+                    "embed_dim": params.get("embed_dim"),
+                    "num_heads": params.get("num_heads"),
+                    "num_layers": params.get("num_layers"),
                     "exp_transform": params.get("exp_transform"),
                     "dataset": _derive_dataset(exp_name),
                     "loss_type": params.get("loss_type"),
@@ -106,6 +109,9 @@ def collect_experiment_results(
             "context_length",
             "output_length",
             "stride",
+            "embed_dim",
+            "num_heads",
+            "num_layers",
             "sgt_loss_lambda",
             "sgt_loss_q",
             "sgt_loss_sigma",

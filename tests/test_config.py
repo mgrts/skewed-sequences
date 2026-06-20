@@ -45,7 +45,7 @@ def test_synthetic_data_configs():
 
 
 def test_training_configs():
-    assert len(TRAINING_CONFIGS) == 35
+    assert len(TRAINING_CONFIGS) == 36
     for cfg in TRAINING_CONFIGS:
         assert "loss_type" in cfg
         assert "output_length" in cfg
@@ -56,7 +56,7 @@ def test_training_configs():
             assert "sgt_loss_sigma" in cfg
             assert "sgt_loss_lambda" in cfg
     loss_types = {c["loss_type"] for c in TRAINING_CONFIGS}
-    assert loss_types == {"sgt", "mse", "mae", "cauchy", "huber", "tukey"}
+    assert loss_types == {"sgt", "mse", "mae", "cauchy", "huber", "tukey", "charbonnier"}
 
     # The SGT skew sweep must be present (the asymmetric loss is actually exercised).
     sgt_lambdas = {c["sgt_loss_lambda"] for c in TRAINING_CONFIGS if c["loss_type"] == "sgt"}

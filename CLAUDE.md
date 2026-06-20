@@ -18,7 +18,7 @@ Everything is driven through a single `skseq` Typer CLI.
 - `skewed_sequences/modeling/`
   - `models.py` — `TransformerWithPE`, `LSTM`, `PositionalEncoding`. Both models
     expose `forward(src, tgt)` (teacher-forced) and `infer(src, tgt_len)` (autoregressive).
-  - `loss_functions.py` — `SGTLoss` (asymmetric) + `CauchyLoss` / `HuberLoss` / `TukeyLoss` (symmetric).
+  - `loss_functions.py` — `SGTLoss` (asymmetric) + `CauchyLoss` / `HuberLoss` / `TukeyLoss` / `CharbonnierLoss` (symmetric).
   - `train.py` — CLI entry (`main`) + `get_loss_function` factory + device selection + MLflow run.
   - `trainer.py` — epoch loop, per-epoch MLflow logging, checkpoint/early-stop on **val MAE**.
   - `utils.py` — `set_seed`, `train_epoch`, `evaluate`, `compute_metrics`, `EarlyStopping`.
@@ -28,14 +28,17 @@ Everything is driven through a single `skseq` Typer CLI.
   `owid_covid/`, `lanl/`, `rvr_us/`, `health_fitness/`). Each is a Typer app writing a `.npy`.
 - `skewed_sequences/experiments/`
   - `run_experiments/{synthetic,lanl,owid_covid,rvr_us}_data.py` — grid-sweep runners (Typer).
+    `head_attention_data.py` (`run-head-sweep`) — multi-head study: fixed embed width (256),
+    head count swept {1,2,4,8} on heavy-tailed synthetic, transformer only.
     `lambdas.py` is an **unregistered** run-by-hand script (no `_register_lazy` entry).
   - `run_experiments/_runner.py` — shared `run_training_config` helper (one `train.main` call site).
   - `collect_results.py` — reads MLflow back into `reports/experiment_results.csv`.
-  - `aggregate_results.py` — replicate summary stats + SGT-vs-baseline Mann-Whitney into `reports/experiment_summary.csv`.
+  - `aggregate_results.py` — replicate summary stats (mean/std/95%CI/median/IQR) + SGT-vs-baseline
+    **paired Wilcoxon signed-rank** + a `best_methods` table into `reports/experiment_summary{,_comparisons,_best_methods}.csv`.
   - `calculate_metrics.py`, `calculate_dispersion_scaling.py` — analysis scripts.
 - `skewed_sequences/visualization/` — `style.py`, `predictions.py`, `plots.py`,
   `visualize_data.py`, `visualize_losses.py` (NumPy reimplementation of the SGT loss).
-- `skewed_sequences/metrics.py` — skewness / kappa / dispersion metrics.
+- `skewed_sequences/metrics.py` — skewness / kappa / dispersion / Hill tail-index metrics.
 - `skewed_sequences/mlflow_contract.py` — single source of the MLflow param/metric key names.
 - `skewed_sequences/data/_common.py` — shared loader helpers (`slice_array_to_chunks`, `scale_and_stack`).
 - `tests/` — one `test_<module>.py` per source module; plain pytest, no `conftest.py` (**141 tests**).
@@ -50,8 +53,9 @@ skseq --help
 skseq train main --loss-type mse
 skseq data generate-synthetic main
 skseq experiments run-synthetic main
+skseq experiments run-head-sweep main       # multi-head attention study (heavy-tailed synthetic)
 skseq experiments collect-results main      # MLflow -> reports/experiment_results.csv
-skseq experiments aggregate-results main    # results.csv -> summary + SGT-vs-baseline tests
+skseq experiments aggregate-results main    # results.csv -> summary + SGT-vs-baseline tests (sMAPE)
 skseq visualize-losses main
 
 # `visualize` and `plots` have named subcommands (no `main`):
@@ -91,10 +95,14 @@ Make targets: `make test` (pytest) · `make lint` (flake8 + isort --check + blac
    imported as Typer parameter defaults. Runner training-loop defaults now also live in
    `config.py` (`BATCH_SIZE=32 / NUM_EPOCHS=100 / LEARNING_RATE=1e-4 /
    EARLY_STOPPING_PATIENCE=20 / NUM_WORKERS=0`) and are imported by `train.main` and
-   every runner — no inline copies. Every runner also sweeps `MODEL_TYPES =
-   (transformer, lstm)`. Edit `config.py`, never inline copies. Tests pin counts (**4**
-   synthetic configs, **35** training configs — 26 symmetric SGT + **4 skewed (nonzero-λ)
-   SGT** + 5 classical) and the constant literals.
+   every runner — no inline copies. Every runner sweeps `MODEL_TYPES = (transformer,)`
+   (the IJIMAI revision is transformer-only; the `LSTM` class is retained but not swept).
+   Edit `config.py`, never inline copies. Tests pin counts (**4** synthetic configs,
+   **36** training configs — 26 symmetric SGT + **4 skewed (nonzero-λ) SGT** + 6 classical
+   — mse/mae/cauchy/huber/tukey/**charbonnier**) and the constant literals. Runners draw the
+   per-run seed **once per (run_idx, model_type)** and reuse it across the loss loop, so
+   replicates are **seed-paired across loss types** (matched on `random_state`) — this is
+   what makes `aggregate_results`' paired Wilcoxon valid.
 6. **MLflow key contract.** Param/metric key names live ONCE in
    `skewed_sequences/mlflow_contract.py` and are imported by both `train.main` (producer)
    and `collect_results.py` (consumer); `test_mlflow_contract.py` pins that what

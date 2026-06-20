@@ -65,14 +65,19 @@ def main(
 
         typer.echo("Dataset generation complete.\n")
 
-        for train_config in training_configs:
-            loss_type = train_config["loss_type"]
+        # Seed is drawn ONCE per (run_idx, model_type) and reused across every
+        # loss config, so all losses in a run share the same data split and the
+        # same initialization seed (reproducible split + weight init; runs are NOT
+        # bit-reproducible — see CLAUDE.md #7). This seed-pairs the replicates
+        # across loss types, which the paired Wilcoxon in aggregate_results uses.
+        for run_idx in range(1, n_runs + 1):
+            for model_type in MODEL_TYPES:
+                experiment_seed = random.randint(0, 2**32 - 1)
+                experiment_name = f"{base_experiment_name}_run_{run_idx}"
 
-            for run_idx in range(1, n_runs + 1):
-                for model_type in MODEL_TYPES:
+                for train_config in training_configs:
+                    loss_type = train_config["loss_type"]
                     experiment_counter += 1
-                    experiment_seed = random.randint(0, 2**32 - 1)
-                    experiment_name = f"{base_experiment_name}_run_{run_idx}"
 
                     typer.echo(
                         f"==== [{experiment_counter}/{total_experiments}] Starting training: "

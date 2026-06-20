@@ -34,6 +34,8 @@ from skewed_sequences.experiments.collect_results import (
         ("lanl_tukey_run_7", "lanl"),
         ("rvr-us-bed-occupancy_run_1", "rvr-us-bed-occupancy"),
         ("rvr-us-influenza-cases_run_7", "rvr-us-influenza-cases"),
+        ("head-heavy-tailed_run_1", "head-heavy-tailed"),
+        ("head-heavy-tailed_run_10", "head-heavy-tailed"),
         # Default experiment name (no _run_N suffix)
         ("Transformer-SGT-synthetic", "Transformer-SGT-synthetic"),
     ],

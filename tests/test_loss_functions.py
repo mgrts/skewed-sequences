@@ -5,6 +5,7 @@ import torch
 
 from skewed_sequences.modeling.loss_functions import (
     CauchyLoss,
+    CharbonnierLoss,
     HuberLoss,
     SGTLoss,
     TukeyLoss,
@@ -108,3 +109,48 @@ class TestTukeyLoss:
         x = torch.ones(5)
         loss = TukeyLoss()(x, x.clone())
         assert loss.item() == pytest.approx(0.0, abs=1e-6)
+
+
+class TestCharbonnierLoss:
+    def test_zero_residual_is_zero(self):
+        """L(0) = sqrt(0+eps²) - eps = 0 (comparable to the other baselines)."""
+        x = torch.ones(5)
+        loss = CharbonnierLoss(eps=0.5)(x, x.clone())
+        assert loss.item() == pytest.approx(0.0, abs=1e-6)
+
+    def test_positive_and_finite(self, tensors):
+        y, y_pred = tensors
+        loss = CharbonnierLoss(eps=1.0)(y_pred, y)
+        assert torch.isfinite(loss) and loss.item() > 0
+
+    def test_linear_for_large_residuals(self):
+        """For |diff| >> eps, Charbonnier ≈ |diff| - eps ≈ |diff| (MAE-like)."""
+        y = torch.zeros(10)
+        y_pred = torch.full((10,), 100.0)
+        loss = CharbonnierLoss(eps=1e-3)(y_pred, y)
+        assert loss.item() == pytest.approx(100.0, rel=1e-4)
+
+    def test_quadratic_for_small_residuals(self):
+        """For |diff| << eps, Charbonnier ≈ diff²/(2 eps) (smooth, no kink, L(0)=0)."""
+        eps = 1.0
+        y = torch.zeros(10)
+        y_pred = torch.full((10,), 0.01)
+        loss = CharbonnierLoss(eps=eps)(y_pred, y)
+        approx = (0.01**2) / (2 * eps)
+        assert loss.item() == pytest.approx(approx, abs=1e-6)
+
+    def test_smooth_gradient_at_zero(self):
+        """Unlike MAE, the gradient is well-defined (zero) at the origin."""
+        diff = torch.zeros(1, requires_grad=True)
+        loss = CharbonnierLoss(eps=1.0)(diff, torch.zeros(1))
+        loss.backward()
+        assert torch.isfinite(diff.grad).all()
+        assert diff.grad.abs().item() == pytest.approx(0.0, abs=1e-6)
+
+    def test_reduction_modes(self, tensors):
+        y, y_pred = tensors
+        s = CharbonnierLoss(eps=1.0, reduction="sum")(y_pred, y)
+        m = CharbonnierLoss(eps=1.0, reduction="mean")(y_pred, y)
+        none = CharbonnierLoss(eps=1.0, reduction="none")(y_pred, y)
+        assert s.item() == pytest.approx(none.sum().item(), rel=1e-5)
+        assert m.item() == pytest.approx(none.mean().item(), rel=1e-5)

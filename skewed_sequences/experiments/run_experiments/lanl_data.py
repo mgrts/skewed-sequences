@@ -41,13 +41,15 @@ def main(
 
     typer.echo(f"==== Using dataset: {dataset_path.name} ====")
 
-    for train_config in training_configs:
-        loss_type = train_config["loss_type"]
+    # Seed drawn once per (run_idx, model_type) and reused across all loss
+    # configs, so replicates are seed-paired across loss types (paired Wilcoxon).
+    for run_idx in range(1, n_runs + 1):
+        for model_type in MODEL_TYPES:
+            experiment_seed = random.randint(0, 2**32 - 1)
 
-        for run_idx in range(1, n_runs + 1):
-            for model_type in MODEL_TYPES:
+            for train_config in training_configs:
+                loss_type = train_config["loss_type"]
                 experiment_counter += 1
-                experiment_seed = random.randint(0, 2**32 - 1)
                 experiment_name = f"lanl_{loss_type}_run_{run_idx}"
 
                 typer.echo(

@@ -23,7 +23,13 @@ from skewed_sequences.config import (
 from skewed_sequences.mlflow_contract import SUMMARY_METRIC_STEMS, summary_metric_key
 from skewed_sequences.modeling.data_processing import create_dataloaders
 from skewed_sequences.modeling.evaluation import log_val_predictions
-from skewed_sequences.modeling.loss_functions import CauchyLoss, HuberLoss, SGTLoss, TukeyLoss
+from skewed_sequences.modeling.loss_functions import (
+    CauchyLoss,
+    CharbonnierLoss,
+    HuberLoss,
+    SGTLoss,
+    TukeyLoss,
+)
 from skewed_sequences.modeling.models import LSTM, TransformerWithPE
 from skewed_sequences.modeling.trainer import train_model
 from skewed_sequences.modeling.utils import persistence_metrics, residual_scale_estimate, set_seed
@@ -41,15 +47,24 @@ def get_loss_function(
 ):
     """Build the criterion.
 
-    The robust baselines (Cauchy/Huber/Tukey) scale their thresholds by
-    ``residual_scale`` (a robust estimate of the residual spread) using the
-    classic 95%-efficiency tuning constants, so they actually enter their robust
-    regime instead of collapsing to MSE at this data scale.
+    Every robust loss (SGT and the Cauchy/Huber/Tukey/Charbonnier baselines)
+    scales its transition by ``residual_scale`` (a robust estimate of the residual
+    spread), so all of them enter their robust regime instead of collapsing to
+    MSE at this data scale. For SGT this is essential: with ``sigma`` left at the
+    raw unit (>> the standardized residual scale), the SGT operates entirely in
+    its small-deviation (~quadratic / MSE) regime and ``q`` (its tail-tolerance
+    knob) is inert. Setting ``sigma = sgt_loss_sigma * residual_scale`` puts the
+    SGT transition at the residual bulk so ``q`` actually controls tail behaviour;
+    ``sgt_loss_sigma`` therefore acts as a unit multiplier (default 1.0).
     """
     loss_type = loss_type.lower()
     if loss_type == "sgt":
         return SGTLoss(
-            eps=1e-6, sigma=sgt_loss_sigma, p=sgt_loss_p, q=sgt_loss_q, lam=sgt_loss_lambda
+            eps=1e-6,
+            sigma=sgt_loss_sigma * residual_scale,
+            p=sgt_loss_p,
+            q=sgt_loss_q,
+            lam=sgt_loss_lambda,
         )
     elif loss_type == "mse":
         return torch.nn.MSELoss()
@@ -61,6 +76,10 @@ def get_loss_function(
         return HuberLoss(delta=1.345 * residual_scale)
     elif loss_type == "tukey":
         return TukeyLoss(c=4.685 * residual_scale)
+    elif loss_type == "charbonnier":
+        # eps plays the role of Huber's delta — same 95%-efficiency tuning so the
+        # smooth-L1 transition brackets the residual bulk at this data scale.
+        return CharbonnierLoss(eps=1.345 * residual_scale)
     else:
         raise ValueError(f"Unsupported loss type: {loss_type}")
 
