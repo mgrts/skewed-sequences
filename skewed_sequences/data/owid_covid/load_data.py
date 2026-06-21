@@ -41,7 +41,11 @@ def download_file_with_progress(url: str, dest_path: Path, chunk_size: int = 102
                 file.write(chunk)
                 progress_bar.update(len(chunk))
 
-    if total_size != 0 and progress_bar.n != total_size:
+    # Only a SHORT read is a real truncation. Servers that gzip the response (e.g.
+    # GitHub raw) report the compressed length in content-length while
+    # iter_content yields the larger decompressed stream, so ``n > total_size`` is
+    # normal and must not be treated as corruption.
+    if total_size != 0 and progress_bar.n < total_size:
         logger.error("Download incomplete or corrupted.")
         raise typer.Exit(code=1)
 

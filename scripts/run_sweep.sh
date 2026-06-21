@@ -53,11 +53,14 @@ else
   log "[skip] OWID — ${OWID_RAW} not found"
 fi
 
+if [ ! -f "${RVR_RAW}" ]; then
+  skseq data download-rvr download || log "RVR download failed (offline?) — will skip RVR"
+fi
 if [ -f "${RVR_RAW}" ]; then
   log "RVR sweep (bed occupancy + influenza)"
   skseq experiments run-rvr main --n-runs "${N_RUNS}" || log "RVR stage failed — continuing"
 else
-  log "[skip] RVR — ${RVR_RAW} not found (download from Kaggle and place it there)"
+  log "[skip] RVR — ${RVR_RAW} not found"
 fi
 
 # ---- collect + aggregate whatever ran -------------------------------------

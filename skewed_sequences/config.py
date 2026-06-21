@@ -10,7 +10,19 @@ load_dotenv()
 PROJ_ROOT = Path(__file__).resolve().parents[1]
 logger.info(f"PROJ_ROOT path is: {PROJ_ROOT}")
 
-DATA_URL = "https://covid.ourworldindata.org/data/owid-covid-data.csv"
+# OWID COVID dataset. The legacy covid.ourworldindata.org host no longer resolves;
+# the archived full CSV (same schema: location/date/new_cases/...) lives in OWID's
+# GitHub repo, which is reachable from locked-down hosts that allow GitHub.
+DATA_URL = (
+    "https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/owid-covid-data.csv"
+)
+
+# RVR US hospitalization dataset. The CDC stopped updating it in 2024 but the full
+# archived daily timeseries is still served from data.cdc.gov. The Socrata
+# ``rows.csv`` export uses the human-readable column names the loader expects
+# (jurisdiction / collection_date / average_inpatient_beds_occupied /
+# total_admissions_all_influenza_confirmed_past_7days).
+RVR_DATA_URL = "https://data.cdc.gov/api/views/9t9r-e5a3/rows.csv?accessType=DOWNLOAD"
 
 DATA_DIR = PROJ_ROOT / "data"
 RAW_DATA_DIR = DATA_DIR / "raw"

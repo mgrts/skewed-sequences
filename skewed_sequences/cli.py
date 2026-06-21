@@ -105,6 +105,12 @@ _register_lazy(
 )
 _register_lazy(
     data_app,
+    "skewed_sequences.data.rvr_us.load_data",
+    name="download-rvr",
+    help="Download the archived CDC RVR US hospitalization CSV.",
+)
+_register_lazy(
+    data_app,
     "skewed_sequences.data.rvr_us.dataset",
     name="process-rvr",
     help="Process RVR US hospitalization dataset.",
