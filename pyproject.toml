@@ -22,9 +22,22 @@ requests = ">=2.31"
 scikit-learn = ">=1.6,<2"
 scipy = ">=1.15,<2"
 seaborn = ">=0.13"
-torch = ">=2.6,<3"
+# torch: Linux pulls the CUDA 12.4 build (compatible with driver >= R525, e.g. the
+# L4/A100 GPU hosts); macOS keeps the default PyPI wheel (MPS / CPU). The cu124
+# wheel only exists for torch 2.6.0, hence the pin on Linux.
+torch = [
+    {version = "2.6.0", source = "pytorch-cu124", markers = "sys_platform == 'linux'"},
+    {version = ">=2.6,<3", source = "pypi", markers = "sys_platform != 'linux'"},
+]
 tqdm = ">=4.60"
 typer = {version = ">=0.9", extras = ["all"]}
+
+# Explicit source (used only by packages that reference it, e.g. torch on Linux);
+# PyPI stays the default for everything else.
+[[tool.poetry.source]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+priority = "explicit"
 
 [tool.poetry.group.dev.dependencies]
 black = ">=24.0"
