@@ -14,6 +14,14 @@
 #
 set -euo pipefail
 
+# Headless matplotlib backend. Jupyter kernels export MPLBACKEND=module://
+# matplotlib_inline.backend_inline, which is invalid outside the notebook and
+# crashes `import matplotlib.pyplot` in the venv. Force a non-interactive backend.
+export MPLBACKEND="${MPLBACKEND:-Agg}"
+if [ "${MPLBACKEND}" = "module://matplotlib_inline.backend_inline" ]; then
+  export MPLBACKEND=Agg
+fi
+
 N_RUNS="${N_RUNS:-10}"
 SYNTH_N="${SYNTH_N:-1000}"
 SYNTH_STRIDE="${SYNTH_STRIDE:-5}"
