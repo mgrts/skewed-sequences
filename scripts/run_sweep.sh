@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
 #
-# Full experiment sweep (transformer-only). Regenerates every result from scratch
-# and writes the aggregated summaries to reports/. Run on a CUDA GPU host:
+# Full experiment sweep (transformer-only). Regenerates results from scratch.
 #
 #     poetry run bash scripts/run_sweep.sh 2>&1 | tee sweep.log
 #
-# Afterwards, copy back  mlruns.db  and  reports/  (mlruns.db is the source of truth).
+# The synthetic + multi-head studies need no internet and always run. OWID and
+# RVR run only if their source CSV is present (so the sweep does not abort on an
+# offline host):
+#     OWID -> data/raw/dataset.csv            (download, or copy in manually)
+#     RVR  -> data/external/rvr_us_data.csv    (Kaggle: respiratory-virus-response)
 #
-# Tunable via env vars (defaults finish in ~1-2 days on a single A100):
-#     N_RUNS         replicates per (loss, dataset)   [10]
-#     SYNTH_N        synthetic sequences per config   [1000]
-#     SYNTH_STRIDE   window stride (synthetic + head) [5]
+# Afterwards copy back mlruns.db + reports/.
+#
+# Tunable: N_RUNS [10], SYNTH_N [1000], SYNTH_STRIDE [5].
 #
 set -euo pipefail
 
-# Headless matplotlib backend. Jupyter kernels export MPLBACKEND=module://
-# matplotlib_inline.backend_inline, which is invalid outside the notebook and
-# crashes `import matplotlib.pyplot` in the venv. Force a non-interactive backend.
+# Headless matplotlib backend (Jupyter kernels export an inline backend that
+# crashes `import matplotlib.pyplot` in the venv).
 export MPLBACKEND="${MPLBACKEND:-Agg}"
 if [ "${MPLBACKEND}" = "module://matplotlib_inline.backend_inline" ]; then
   export MPLBACKEND=Agg
@@ -25,28 +26,41 @@ fi
 N_RUNS="${N_RUNS:-10}"
 SYNTH_N="${SYNTH_N:-1000}"
 SYNTH_STRIDE="${SYNTH_STRIDE:-5}"
+OWID_RAW="data/raw/dataset.csv"
+RVR_RAW="data/external/rvr_us_data.csv"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
 log "Device check"
 python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
 
-log "Real-data prep (OWID COVID)"
-skseq data download-owid download
-skseq data process-owid main
-
+# ---- internet-free core (always runs) -------------------------------------
 log "Synthetic sweep (n_sequences=${SYNTH_N}, stride=${SYNTH_STRIDE})"
 skseq experiments run-synthetic main --n-runs "${N_RUNS}" --n-sequences "${SYNTH_N}" --stride "${SYNTH_STRIDE}"
-
-log "OWID COVID sweep"
-skseq experiments run-owid main --n-runs "${N_RUNS}"
-
-log "RVR sweep (bed occupancy + influenza)"
-skseq experiments run-rvr main --n-runs "${N_RUNS}"
 
 log "Multi-head attention study (heavy-tailed synthetic)"
 skseq experiments run-head-sweep main --n-runs "${N_RUNS}" --n-sequences "${SYNTH_N}" --stride "${SYNTH_STRIDE}"
 
+# ---- real datasets (only if their source CSV is present) ------------------
+if [ ! -f "${OWID_RAW}" ]; then
+  skseq data download-owid download || log "OWID download failed (offline?) — will skip OWID"
+fi
+if [ -f "${OWID_RAW}" ]; then
+  log "OWID COVID sweep"
+  ( skseq data process-owid main && skseq experiments run-owid main --n-runs "${N_RUNS}" ) \
+    || log "OWID stage failed — continuing"
+else
+  log "[skip] OWID — ${OWID_RAW} not found"
+fi
+
+if [ -f "${RVR_RAW}" ]; then
+  log "RVR sweep (bed occupancy + influenza)"
+  skseq experiments run-rvr main --n-runs "${N_RUNS}" || log "RVR stage failed — continuing"
+else
+  log "[skip] RVR — ${RVR_RAW} not found (download from Kaggle and place it there)"
+fi
+
+# ---- collect + aggregate whatever ran -------------------------------------
 log "Collecting MLflow runs -> reports/experiment_results.csv"
 skseq experiments collect-results main
 
