@@ -29,7 +29,10 @@
 # A failing training stage is logged and the remaining stages still run (collect /
 # aggregate always see whatever finished); grep the log for 'FAILED'.
 #
-# Tunable: N_RUNS [10], SYNTH_N [1000], SYNTH_STRIDE [5], NUM_WORKERS [4]. SYNTH_N and
+# Tunable: N_RUNS [10], SYNTH_N [1000], SYNTH_STRIDE [5], NUM_WORKERS [0]. Keep
+# NUM_WORKERS at 0: the datasets are in-memory tensors, so DataLoader workers only add
+# IPC overhead (NUM_WORKERS=4 doubled the epoch time on the JupyterHub GPU, 2026-09-12).
+# SYNTH_N and
 # SYNTH_STRIDE mirror config.SYNTHETIC_N_SEQUENCES / SYNTHETIC_STRIDE — the synthetic,
 # head and lambda stages must all use the same values (the lambda stage appends to the
 # synthetic experiments and refuses a different logged stride).
@@ -47,7 +50,7 @@ STAGES="${STAGES:-synthetic,head,lambda,owid,rvr,collect}"
 N_RUNS="${N_RUNS:-10}"
 SYNTH_N="${SYNTH_N:-1000}"
 SYNTH_STRIDE="${SYNTH_STRIDE:-5}"
-NUM_WORKERS="${NUM_WORKERS:-4}"
+NUM_WORKERS="${NUM_WORKERS:-0}"
 OWID_RAW="data/raw/owid_jhu_new_cases.csv"
 RVR_RAW="data/external/rvr_us_hospitalization_daily.csv"
 

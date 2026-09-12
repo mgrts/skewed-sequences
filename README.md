@@ -166,9 +166,11 @@ For faster iteration, tune dataset size, stride, and training params:
 ```bash
 poetry run skseq experiments run-synthetic main \
   --n-sequences 2000 --n-runs 3 --stride 10 \
-  --batch-size 64 --num-epochs 50 --early-stopping-patience 10 \
-  --num-workers 4
+  --batch-size 64 --num-epochs 50 --early-stopping-patience 10
 ```
+
+Keep `--num-workers` at its default of 0: the datasets are in-memory tensors, so
+DataLoader workers only add overhead (4 workers doubled the epoch time on a GPU pod).
 
 **4. Visualise results**
 
