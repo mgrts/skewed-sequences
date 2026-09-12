@@ -1,6 +1,6 @@
 ---
 name: loss-math-reviewer
-description: Audits diffs touching skewed_sequences/modeling/loss_functions.py or skewed_sequences/visualization/visualize_losses.py for SGT/robust-loss mathematical correctness and gradient safety. Use when a change modifies any loss class, the SGT reparameterization, the loss factory constants, or the NumPy loss reimplementation.
+description: Audits diffs touching skewed_sequences/modeling/loss_functions.py, skewed_sequences/visualization/visualize_losses.py, the SkewedGeneralizedT pdf/logpdf in data/synthetic/generate_data.py, the SGT MLE in metrics.py, or the residual-scale estimate in modeling/utils.py for SGT/robust-loss mathematical correctness and gradient safety. Use when a change modifies any loss class, the SGT reparameterization, the loss factory scaling, the NumPy SGT reimplementations, or fit_sgt / sgt_increment_fit.
 tools: Read, Grep, Glob, Bash
 model: inherit
 ---
@@ -35,12 +35,27 @@ Read the diff and the current `modeling/loss_functions.py` and
    keeps finite gradients (the classic `torch.where` NaN-poison only bites if the unused
    branch has sqrt/log/division), so it is not forbidden — but if it was refactored,
    actually run a tiny `backward()` with a residual `> c` and confirm `grad` is finite.
-7. **NumPy mirror.** If the SGT formula changed in `loss_functions.py` OR in
-   `visualize_losses.sgt_loss()`, the other was updated to match (no shared code/test
-   links them).
-8. **Factory constants.** `CauchyLoss(gamma=2.0)`, `HuberLoss(delta=1.0)`,
-   `TukeyLoss(c=4.685)` in `get_loss_function` (`modeling/train.py`) stay in sync with the
-   plotting baselines in `visualize_losses.py`.
+7. **Three-way mirror.** The SGT math is implemented in `loss_functions.SGTLoss` (torch),
+   `generate_data.SkewedGeneralizedT.pdf` / `.logpdf` (NumPy) and
+   `visualize_losses.sgt_loss` (NumPy). A formula edit in any one must be mirrored in the
+   other two; `tests/test_sgt_consistency.py` pins their numerical agreement and
+   `test_generate_data.py` pins `logpdf == log(pdf)` (only in the normal-double range —
+   `logpdf` is the correct side where `pdf` underflows).
+8. **Factory scaling.** `get_loss_function` (`modeling/train.py`) scales every robust
+   threshold by the MAD-based `residual_scale` (`1.4826 * MAD` of the 1-step increments):
+   `CauchyLoss(gamma=(2.3849*rs)**2)`, `HuberLoss(delta=1.345*rs)`, `TukeyLoss(c=4.685*rs)`,
+   `CharbonnierLoss(eps=1.345*rs)`, `SGTLoss(sigma=sgt_loss_sigma*rs)`. With a fixed
+   `sigma=1.0` the SGT sits entirely in its quadratic regime and `q` is inert
+   (`references/SGT_SCALE_FINDING.md`) — flag any change that un-scales one loss but not
+   the others. `residual_scale_estimate` must keep RAISING on a degenerate (`<= 1e-4`) or
+   non-finite scale; an `eps` floor once produced 11 degenerate runs.
+9. **SGT MLE (`metrics.fit_sgt` / `sgt_increment_fit`).** `p` and `sigma` stay FIXED
+   (sigma = the same MAD scale training uses) so the fit answers "which (λ, q) would the
+   loss as trained prefer"; the lower bound on `q` is `sgt_min_q(p) = 1.05*(2/p)**(1/p)`
+   (validity `q**p > 2/p`); λ bounds `(-0.95, 0.95)`; the symmetric fit seeds the skewed
+   fit so `delta_nll <= 0`; `lam_at_bound` / `q_at_bound` flags are returned. Verify a
+   known-parameter recovery (`SkewedGeneralizedT(...).rvs`) still holds if the objective
+   or bounds changed.
 
 ## How to report
 

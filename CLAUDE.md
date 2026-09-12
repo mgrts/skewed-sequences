@@ -241,17 +241,33 @@ living in those dirs — and are additionally blocked from staging by the
 `block_large_secret` hook (regex on `.npy`/`.pt`/`.pth`/…), not by a `.gitignore` glob.
 **Never `git add -f`** these (the hook blocks it). Pre-commit enforces
 `check-added-large-files` (maxkb=10000) and
-`detect-private-key`. Package version lives under **`[tool.poetry]`** in
+`detect-private-key`. `references/` is **untracked by decision** (2026-09-12): it holds
+the reviewed article DOCX, the JupyterHub `mlruns.db` / `sweep.log` copies and the
+analysis CSVs. Stage by explicit path (`git add pyproject.toml CLAUDE.md README.md
+scripts skewed_sequences tests .claude …`) — never `git add -A` / `-u` / `.`: the
+`block_large_secret` hook treats those as a whole-tree scan and refuses on the gitignored
+artifacts under `references/`. Package version lives under **`[tool.poetry]`** in
 `pyproject.toml` (poetry-core backend) — do NOT add a PEP 621 `[project]` table
-(breaks the Dockerfile's `poetry build -f wheel`).
+(breaks the Dockerfile's `poetry build -f wheel`). **Every `/commit-push` bumps it**
+(`poetry version patch` by default; `--minor` / `--major` on request) and records
+`Version: old -> new` in the commit body; tags only with `--release`.
 
 ## Claude Code setup in this repo
 
 - **Skills:** `/code-review` (read-only review of the working tree against the invariants
-  above) and `/commit-push` (gated commit → push to `main`). See `.claude/skills/`.
+  above; delegates to the three subagents below) and `/commit-push` (gated: review →
+  tests → pre-commit → doc drift → **mandatory patch version bump** → confirm → explicit-
+  path staging → commit → rebase → push to `main`; `--minor` / `--major` / `--release` /
+  `--no-push` flags). See `.claude/skills/`.
 - **Subagents** (`.claude/agents/`): `loss-math-reviewer`, `experiment-reproducibility-auditor`,
   `lazy-cli-guard` — `/code-review` delegates to these for deep, file-specific audits.
 - **Hooks** (`.claude/settings.json` → `.claude/hooks/`): auto-format edited `.py`
-  (black+isort @ 99); guard against destructive git (force-push, `reset --hard`,
-  `--no-verify`, deleting `main`); block staging large/secret/artifact files; run
-  pytest on stop when source changed. Disable any hook by editing `.claude/settings.json`.
+  (black+isort @ 99; fires on the Edit/Write tools only — after shell edits run
+  `make format`); guard against destructive git (force-push, `reset --hard`,
+  `--no-verify`, deleting `main`, any Claude/AI commit attribution); block staging
+  large/secret/artifact files (`git add -A`/`-u`/`.` are scanned as the whole tree);
+  run pytest on stop when source changed. Disable any hook by editing
+  `.claude/settings.json`.
+- **Keep the setup in sync:** the skills and agents pin counts and file lists (test
+  count, grid sizes, runner names, MLflow keys, loss scaling). When those change in code,
+  update `.claude/skills/*/SKILL.md` and `.claude/agents/*.md` in the same commit.

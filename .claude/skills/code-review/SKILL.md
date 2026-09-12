@@ -42,7 +42,9 @@ checks below apply and which subagent to delegate to.
 When the diff touches a fragile subsystem, dispatch the matching subagent (via the
 Agent tool, `subagent_type`) and fold its findings into the report:
 
-- Touches `modeling/loss_functions.py` or `visualization/visualize_losses.py`
+- Touches `modeling/loss_functions.py`, `visualization/visualize_losses.py`,
+  `data/synthetic/generate_data.py` (the `SkewedGeneralizedT` pdf/logpdf) or
+  `metrics.py` (`fit_sgt` / `sgt_increment_fit`, `modeling/utils.residual_scale_estimate`)
   → **`loss-math-reviewer`**.
 - Touches `cli.py`, `config.py`, or adds/changes a Typer command/runner
   → **`lazy-cli-guard`**.
@@ -74,18 +76,39 @@ Applies to `modeling/loss_functions.py` and the NumPy duplicate `visualization/v
   `backward()` with residuals `> c` and assert the grad is finite.
 - **(p,q) validity:** any new `(p,q)` added to a config satisfies `q**p > 2/p` (flag
   `p=1.0` for low `q`).
-- **Mirror:** if the SGT formula changed in either `loss_functions.py` OR
-  `visualize_losses.py`, the other was updated to match.
-- **Factory constants:** `CauchyLoss(gamma=2.0)`, `HuberLoss(delta=1.0)`,
-  `TukeyLoss(c=4.685)` in `get_loss_function` (`train.py`) stay in sync with the
-  plotting baselines in `visualize_losses.py`.
+- **Mirror (three-way):** the SGT math lives in `loss_functions.py` (torch),
+  `generate_data.SkewedGeneralizedT.pdf/.logpdf` (NumPy) and `visualize_losses.sgt_loss`
+  (NumPy); a formula edit in any one must be mirrored in the other two —
+  `test_sgt_consistency.py` pins their agreement and `test_generate_data.py` pins
+  `logpdf == log(pdf)`.
+- **Factory constants:** `get_loss_function` (`train.py`) scales every robust threshold by
+  the MAD-based `residual_scale`: `CauchyLoss(gamma=(2.3849*rs)**2)`,
+  `HuberLoss(delta=1.345*rs)`, `TukeyLoss(c=4.685*rs)`, `CharbonnierLoss(eps=1.345*rs)`,
+  `SGTLoss(sigma=sgt_loss_sigma*rs)` (see `references/SGT_SCALE_FINDING.md`). The
+  plotting baselines in `visualize_losses.py` use the unit-scale versions. Reverting SGT
+  to a fixed `sigma=1.0` silently pins it to the MSE regime.
+- **Residual scale guard:** `residual_scale_estimate` RAISES on a degenerate (`<= 1e-4`)
+  or non-finite scale — do not reintroduce an `eps` floor (it produced 11 degenerate OWID
+  runs). `metrics.fit_sgt` keeps `p` and `sigma` fixed exactly as training does and
+  bounds `q` below by `sgt_min_q(p)` (`q**p > 2/p`).
 
 ### Step 5: CRITICAL — MLflow + seed reproducibility contract
 
-- Every `params.get()` / `metrics.get()` literal in `collect_results.py` is still
-  emitted byte-identically by `train.main`'s `log_params` / `log_metrics`. The seed key
-  is **`random_state`** (NOT `seed`); summary metrics are `best_{train,val,test}_{smape,mape}`.
-  A rename silently fills NaN columns (`test_collect_results` uses its own mock dict).
+- Key names live ONCE in `mlflow_contract.py` (`PARAM_KEYS`, `ALL_SUMMARY_METRIC_KEYS` =
+  `best_{train,val,test}_{smape,mape,rmse,mae}` + `best_test_naive_{rmse,mae}` +
+  `best_test_mase`, plus the `residual_scale` param); `train.main` (producer) and
+  `collect_results.py` (consumer) both import them and `test_mlflow_contract.py` pins the
+  producer. The seed key is **`random_state`** (NOT `seed`). A rename on one side silently
+  fills NaN columns.
+- **Resume contract** (`run_experiments/_runner.py`): `has_finished_run` matches a FINISHED
+  run on `str(value)` of `loss_type / random_state / output_length / context_length /
+  stride`, the SGT params, and — when the runner passes them — `model_type / embed_dim /
+  num_heads / num_layers / batch_size / num_epochs / early_stopping_patience`. This only
+  works because `train.main` logs those arguments unchanged
+  (`test_train_logs_resume_match_params_verbatim`); any normalisation before
+  `log_params`, or a new runner kwarg that is matched but not logged, silently disables
+  skipping (or, worse, never matches). `logged_experiment_param` refuses an experiment
+  holding two values of the key (mixed seeds / strides).
 - Training body stays inside `with mlflow.start_run(), tempfile.TemporaryDirectory()`;
   `mlflow.log_artifact(model_save_path)` runs before the block exits (the temp file is the
   only model copy). Checkpoint loads keep `weights_only=True`; `evaluation.py` also passes
@@ -112,24 +135,35 @@ Applies to `modeling/loss_functions.py` and the NumPy duplicate `visualization/v
 
 ### Step 7: HIGH — Config / CLI / runner parameter sync & single-step horizon
 
-- Every `TRAINING_CONFIGS` entry has an explicit `output_length` so the runners'
-  `.get("output_length", 5)` magic-5 fallback never fires; SGT entries also carry
+- Every `TRAINING_CONFIGS` / `LAMBDA_SWEEP_CONFIGS` entry has an explicit `output_length`;
+  `_runner.run_training_config` reads `.get("output_length", OUTPUT_LENGTH)` (the old
+  magic-5 fallback is gone — do not reintroduce a literal). SGT entries also carry
   `sgt_loss_lambda`/`q`/`sigma`/`p`.
-- Runner literals `batch_size=32 / num_epochs=100 / early_stopping_patience=20 /
-  num_workers=0` match `train.main` defaults across all 5 runner files (the 4 grid
-  runners + `lambdas.py`); the `.get("output_length", 5)` magic-5 fallback exists only in
-  the 4 grid runners (`lambdas.py` passes `OUTPUT_LENGTH` directly). `n_runs`/`stride`
-  default to `config.N_RUNS`/`STRIDE`.
+- All six runners (`synthetic / lanl / owid_covid / rvr_us / head_attention /
+  lambda_sweep`) import `BATCH_SIZE / NUM_EPOCHS / EARLY_STOPPING_PATIENCE / NUM_WORKERS`
+  and `N_RUNS` from `config.py` — no inline literals (the unregistered `lambdas.py` is
+  run by hand). The three synthetic runners default `n_sequences` / `stride` to
+  `SYNTHETIC_N_SEQUENCES` / `SYNTHETIC_STRIDE` (they must regenerate identical data; the
+  λ runner refuses a stride that differs from the experiment's logged one). Runner CLI
+  params use plain or `Annotated[..., typer.Option(help=...)]` defaults — never a bare
+  `typer.Option(...)` default, which is a truthy `OptionInfo` when `main()` is called
+  directly from Python/tests.
 - If `SEQUENCE_LENGTH`/`CONTEXT_LENGTH`/`OUTPUT_LENGTH` changed:
   `CONTEXT_LENGTH + OUTPUT_LENGTH <= SEQUENCE_LENGTH` holds (the `train.py` assert),
   `test_config.py` literals (300/200/1/1) updated, resulting window count `> 0`.
-- If `SYNTHETIC_DATA_CONFIGS` (count **4**, keys `lam`/`q`/`sigma`/`experiment_name`) or
-  `TRAINING_CONFIGS` (count **31**, loss set `{sgt,mse,mae,cauchy,huber,tukey}`) changed,
-  ALL consumers (`visualize_data.py`, `plots.py`, `calculate_metrics.py`,
-  `calculate_dispersion_scaling.py`, runners) AND the pinned counts in `test_config.py` /
-  `test_train.py` / `test_loss_functions.py` were updated together.
+- If `SYNTHETIC_DATA_CONFIGS` (count **4**, keys `lam`/`q`/`sigma`/`experiment_name`/
+  `kernel_size`), `TRAINING_CONFIGS` (count **36**, loss set
+  `{sgt,mse,mae,cauchy,huber,tukey,charbonnier}`, 4 skewed `lam>0` entries) or
+  `LAMBDA_SWEEP_CONFIGS` (count **12**, every `(p,q)` with a `lam=0` twin in the main
+  grid) changed, ALL consumers (`visualize_data.py`, `plots.py`, `calculate_metrics.py`,
+  `calculate_dispersion_scaling.py`, `increment_fit.py`, runners) AND the pinned counts in
+  `test_config.py` / `test_lambda_sweep.py` / `test_head_attention.py` / `test_train.py` /
+  `test_loss_functions.py` were updated together.
 - Experiment names end in `_run_<int>`; `collect_results._derive_dataset` regex/lanl
-  special-case updated if naming changed, with a new `test_collect_results` case.
+  special-case updated if naming changed, with a new `test_collect_results` case. The λ
+  sub-sweep and any resumed sweep append to EXISTING experiment names on purpose
+  (seed-paired); a different dataset size needs a different experiment name or tracking
+  DB, never `--no-resume` into the same name.
 - A new loss type is added in `get_loss_function` (`train.py`) AND mirrored into
   `config.TRAINING_CONFIGS` + `test_train.py` + `test_loss_functions.py` + the loss set.
 
@@ -158,7 +192,14 @@ Applies to `modeling/loss_functions.py` and the NumPy duplicate `visualization/v
 - Windowing: `window_total = context_len + output_len`; `n_windows = (T - window_total)//stride + 1`;
   `end_input = start + context_len`, `end_target = end_input + output_len`.
 - `train.py` keeps `assert context_length + output_length <= data.shape[1]`; new
-  `create_dataloaders` callers add the same guard.
+  `create_dataloaders` callers add the same guard, and pass `min_split_sequences`
+  (`train.main` uses 5) so a tiny dataset cannot split into 1-sequence val/test sets.
+- Real loaders: OWID reads the daily OWID/JHU **wide** file (`config.DATA_URL`;
+  `validate_daily_wide_csv` rejects weekly cadence), RVR reads the CDC SODA endpoint with
+  `$select` + a `count(*)` row check and drops the `US` / `Region N` aggregates. Both call
+  `check_not_step_function` (> 50 % exactly-zero increments = weekly-reported step data)
+  before saving. Do not point either loader back at the weekly `owid-covid-data.csv` or
+  the Socrata `rows.csv` export.
 - Every loader still produces `(N, T, 1)` (`np.vstack` then `[..., np.newaxis]`); a 2-D
   save breaks the `(n_seqs, T, _)` unpack and `skewness_of_diff`'s `ndim == 3` assert.
 - `compute_metrics(predictions, targets)` — never swap (MAPE denominator is `|target|`,
@@ -177,7 +218,10 @@ Applies to `modeling/loss_functions.py` and the NumPy duplicate `visualization/v
   table (the Dockerfile's `poetry build -f wheel` depends on it).
 - **No secrets / no hardcoded credentials or PII** in the diff. No staged files under
   `data/`, `models/`, `mlruns/`, `notebooks/`, `reports/`, nor any `*.ipynb`/`*.npy`/`*.db`;
-  no `git add -f` bypassing `.gitignore`; no file `> 10 MB`.
+  no `git add -f` bypassing `.gitignore`; no file `> 10 MB`. `references/` is untracked by
+  decision (article DOCX, JupyterHub `mlruns.db`, sweep logs, analysis CSVs) — staging is
+  by explicit path, never `git add -A` / `-u` / `.` (the `block_large_secret` hook treats
+  those as a whole-tree scan and refuses on the gitignored artifacts there).
 - New CLI command calls `apply_style()` before building figures and `mkdir(parents=True,
   exist_ok=True)` before saving into `FIGURES_DIR`. Every `plt.figure`/`plt.subplots` has a
   matching `plt.close()`. Paths derive from `config.*_DIR`; colors from `style.COLORS`/`PALETTE_SEQ` — no hardcoded `reports/...` or hex.
@@ -185,13 +229,15 @@ Applies to `modeling/loss_functions.py` and the NumPy duplicate `visualization/v
   `forward`/`infer` docstrings stay in sync with code.
 - If tests added/removed, the README test-count claim and the CLAUDE.md package map are
   updated; a new source module gets a matching `test_<module>.py`.
+- The package version under `[tool.poetry]` is bumped by `/commit-push` on every commit
+  (patch by default); a diff that edits `version` by hand should match that convention.
 
 ### Step 11: Run tests + hooks
 
 Run both and report exit status:
 
 ```bash
-make test         # poetry run pytest  (currently 98 tests)
+make test         # poetry run pytest  (242 tests as of 2026-09-12; read the live count)
 make pre-commit    # black/isort/flake8 @ 99 + check-added-large-files + detect-private-key
 ```
 

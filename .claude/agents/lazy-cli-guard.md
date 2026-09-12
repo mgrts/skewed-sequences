@@ -35,6 +35,11 @@ Read the diff plus `cli.py`, `config.py`, and any added/changed command module. 
    Smoke-test: `poetry run skseq <group> <cmd> --help` actually resolves.
 5. **No inlined command bodies.** A command's logic was not moved into `cli.py`; it stays
    behind `_register_lazy` in its own module.
+6. **Direct-call-safe parameter defaults.** Runner / loader `main()` functions are called
+   directly from tests and other runners, so their params use plain defaults or
+   `Annotated[T, typer.Option(help=...)] = default` — never a bare `x: T = typer.Option(...)`
+   default (a truthy `OptionInfo` object leaks into direct calls; `resume`, `all_locations`,
+   `include_aggregates` once did exactly that). Check `--help` still renders the help text.
 
 ## How to report
 
