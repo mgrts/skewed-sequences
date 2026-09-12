@@ -59,3 +59,14 @@ class TestSkewedGeneralizedT:
     def test_lam_out_of_range(self):
         with pytest.raises(AssertionError):
             SkewedGeneralizedT(lam=1.5)
+
+
+def test_logpdf_matches_log_pdf():
+    from skewed_sequences.data.synthetic.generate_data import SkewedGeneralizedT
+
+    dist = SkewedGeneralizedT(mu=0.1, sigma=0.7, lam=0.6, p=1.5, q=3.0)
+    x = np.linspace(-5, 5, 201)
+    assert np.allclose(dist.logpdf(x), np.log(dist.pdf(x)), atol=1e-12)
+    # Deep in the tail pdf underflows to 0 but logpdf stays finite.
+    far = np.array([1e6])
+    assert np.isfinite(dist.logpdf(far)).all()

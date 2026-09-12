@@ -44,3 +44,38 @@ def scale_and_stack(chunks: Iterable, sequence_length: int) -> np.ndarray:
         sequences.append(scaled)
     stacked = np.vstack(sequences)
     return stacked[..., np.newaxis]
+
+
+def zero_increment_fraction(sequences: np.ndarray) -> float:
+    """Fraction of one-step increments that are *exactly* zero over ``(N, T, ...)`` data."""
+    arr = np.asarray(sequences)
+    increments = np.diff(arr[:, :, 0], axis=1)
+    return float((increments == 0).mean()) if increments.size else 0.0
+
+
+def check_not_step_function(
+    sequences: np.ndarray,
+    max_zero_increment_fraction: float = 0.5,
+    name: str = "dataset",
+) -> float:
+    """Raise if more than ``max_zero_increment_fraction`` of the increments are exactly 0.
+
+    A majority of exactly-zero increments means the series are piecewise constant —
+    the fingerprint of weekly-reported data (one value per week, zeros or forward
+    fills in between) run through a rolling mean. Such data has a zero median
+    absolute deviation of increments, so ``residual_scale_estimate`` collapses and
+    every scale-dependent loss (SGT / Cauchy / Huber / Tukey / Charbonnier) is
+    degenerate; the persistence baseline is also near-perfect, so MASE is
+    meaningless. Fail here, at load time, instead of training hundreds of garbage
+    runs (the June-2026 OWID sweep did exactly that). Returns the fraction.
+    """
+    frac = zero_increment_fraction(sequences)
+    if frac > max_zero_increment_fraction:
+        raise ValueError(
+            f"{name}: {frac:.1%} of one-step increments are exactly zero "
+            f"(> {max_zero_increment_fraction:.0%}); the series are piecewise constant. "
+            "This is the signature of weekly-reported source data (or a rolling mean over "
+            "it). Fix the source/loader — the residual scale of such data is zero and "
+            "every robust loss degenerates."
+        )
+    return frac

@@ -31,17 +31,26 @@ Everything is driven through a single `skseq` Typer CLI.
     `head_attention_data.py` (`run-head-sweep`) — multi-head study: fixed embed width (256),
     head count swept {1,2,4,8} on heavy-tailed synthetic, transformer only.
     `lambdas.py` is an **unregistered** run-by-hand script (no `_register_lazy` entry).
-  - `run_experiments/_runner.py` — shared `run_training_config` helper (one `train.main` call site).
+    `lambda_sweep_data.py` (`run-lambda-sweep`) — fine skew grid `LAMBDA_SWEEP_CONFIGS`
+    (λ ∈ {0.1,0.2,0.3}) appended to the existing `<dataset>_run_<i>` synthetic experiments.
+  - `run_experiments/_runner.py` — shared `run_training_config` helper (one `train.main` call site)
+    plus the **resume** helpers `draw_experiment_seed` (reuse the seed already logged under an
+    experiment) and `has_finished_run` (skip a config that already has a FINISHED run).
   - `collect_results.py` — reads MLflow back into `reports/experiment_results.csv`.
   - `aggregate_results.py` — replicate summary stats (mean/std/95%CI/median/IQR) + SGT-vs-baseline
     **paired Wilcoxon signed-rank** + a `best_methods` table into `reports/experiment_summary{,_comparisons,_best_methods}.csv`.
   - `calculate_metrics.py`, `calculate_dispersion_scaling.py` — analysis scripts.
+  - `increment_fit.py` (`increment-fit`) — MLE of SGT (λ, q) on each dataset's one-step increments
+    (`metrics.sgt_increment_fit`), the reviewer-A3/A11 parameter-guidance tool →
+    `reports/increment_sgt_fit.csv`.
 - `skewed_sequences/visualization/` — `style.py`, `predictions.py`, `plots.py`,
   `visualize_data.py`, `visualize_losses.py` (NumPy reimplementation of the SGT loss).
-- `skewed_sequences/metrics.py` — skewness / kappa / dispersion / Hill tail-index metrics.
+- `skewed_sequences/metrics.py` — skewness / kappa / dispersion / Hill tail-index metrics +
+  `fit_sgt` / `sgt_increment_fit` (SGT MLE with `p` and the residual scale fixed as in training).
 - `skewed_sequences/mlflow_contract.py` — single source of the MLflow param/metric key names.
-- `skewed_sequences/data/_common.py` — shared loader helpers (`slice_array_to_chunks`, `scale_and_stack`).
-- `tests/` — one `test_<module>.py` per source module; plain pytest, no `conftest.py` (**141 tests**).
+- `skewed_sequences/data/_common.py` — shared loader helpers (`slice_array_to_chunks`, `scale_and_stack`,
+  `check_not_step_function`).
+- `tests/` — one `test_<module>.py` per source module; plain pytest, no `conftest.py` (**242 tests**).
 
 ## How to run
 
@@ -54,8 +63,13 @@ skseq train main --loss-type mse
 skseq data generate-synthetic main
 skseq experiments run-synthetic main
 skseq experiments run-head-sweep main       # multi-head attention study (heavy-tailed synthetic)
+skseq experiments run-lambda-sweep main     # fine lambda grid, appended to the heavy-tailed-skewed experiments
+skseq experiments increment-fit main        # SGT (lambda, q) MLE on increments -> reports/increment_sgt_fit.csv
 skseq experiments collect-results main      # MLflow -> reports/experiment_results.csv
-skseq experiments aggregate-results main    # results.csv -> summary + SGT-vs-baseline tests (sMAPE)
+skseq experiments aggregate-results main    # results.csv -> summary + SGT-vs-baseline tests (MASE default)
+skseq data download-owid download && skseq data process-owid main   # daily OWID/JHU wide file
+skseq data download-rvr download && skseq data process-rvr main     # CDC SODA endpoint, row-count verified
+STAGES=owid,rvr,lambda,collect nohup poetry run bash scripts/run_sweep.sh > sweep.log 2>&1 &   # resumable sweep
 skseq visualize-losses main
 
 # `visualize` and `plots` have named subcommands (no `main`):
@@ -89,7 +103,9 @@ Make targets: `make test` (pytest) · `make lint` (flake8 + isort --check + blac
    `train.py` asserts `context_length + output_length <= data.shape[1]` — the ONLY
    guard against a silently-empty `SlidingWindowDataset`
    (`n_windows = (T - window_total)//stride + 1`). Replicate it in any new caller of
-   `create_dataloaders`.
+   `create_dataloaders`. `create_dataloaders(min_split_sequences=…)` additionally raises when
+   any split has fewer sequences than that (`train.main` passes 5; the truncated RVR download
+   once trained on a 6/1/1 split without complaint).
 5. **`config.py` is the single source of truth.** `SEED=927, SEQUENCE_LENGTH=300,
    CONTEXT_LENGTH=200, OUTPUT_LENGTH=1, STRIDE=1, N_RUNS=10, TRACKING_URI`. These are
    imported as Typer parameter defaults. Runner training-loop defaults now also live in
@@ -99,10 +115,20 @@ Make targets: `make test` (pytest) · `make lint` (flake8 + isort --check + blac
    (the IJIMAI revision is transformer-only; the `LSTM` class is retained but not swept).
    Edit `config.py`, never inline copies. Tests pin counts (**4** synthetic configs,
    **36** training configs — 26 symmetric SGT + **4 skewed (nonzero-λ) SGT** + 6 classical
-   — mse/mae/cauchy/huber/tukey/**charbonnier**) and the constant literals. Runners draw the
-   per-run seed **once per (run_idx, model_type)** and reuse it across the loss loop, so
-   replicates are **seed-paired across loss types** (matched on `random_state`) — this is
-   what makes `aggregate_results`' paired Wilcoxon valid.
+   — mse/mae/cauchy/huber/tukey/**charbonnier**; **12** `LAMBDA_SWEEP_CONFIGS`) and the constant
+   literals. Runners draw the per-run seed **once per (run_idx, model_type)** via
+   `_runner.draw_experiment_seed` and reuse it across the loss loop, so replicates are
+   **seed-paired across loss types** (matched on `random_state`) — this is what makes
+   `aggregate_results`' paired Wilcoxon valid. With `--resume` (the runner default) the seed
+   already logged under the experiment name is reused and configs with a FINISHED run are
+   skipped, so a killed sweep or an appended sub-sweep (`run-lambda-sweep`) stays paired;
+   the match includes the training budget (`num_epochs` / `batch_size` / patience) so a
+   smoke run is never mistaken for a sweep run, and the seed lookup refuses an experiment
+   that already holds two seeds. `SYNTHETIC_N_SEQUENCES=1000` / `SYNTHETIC_STRIDE=5` are
+   the shared defaults of the three synthetic runners (the λ runner refuses a stride that
+   differs from the experiment's logged one). A *different* dataset size needs a **different
+   experiment name or tracking DB** — `--no-resume` would append unpaired runs into the
+   same experiment and `collect_results` would pool them.
 6. **MLflow key contract.** Param/metric key names live ONCE in
    `skewed_sequences/mlflow_contract.py` and are imported by both `train.main` (producer)
    and `collect_results.py` (consumer); `test_mlflow_contract.py` pins that what
@@ -113,8 +139,8 @@ Make targets: `make test` (pytest) · `make lint` (flake8 + isort --check + blac
    `rmse`/`mae`/`mase` — the percentage metrics are dominated by near-zero targets.
 7. **Seed/reproducibility reality.** `set_seed` seeds `torch` + `numpy` (+cuda) but
    NOT Python's `random`, NOR MPS, NOR cudnn. Runners draw per-run seeds with
-   `random.randint` (Python `random`, never seeded), so a run is reproducible ONLY via
-   its MLflow-logged `random_state`. On Apple Silicon (the dev box) runs are not
+   `random.randint` (Python `random`, never seeded) unless `--resume` finds one already
+   logged, so a run is reproducible ONLY via its MLflow-logged `random_state`. On Apple Silicon (the dev box) runs are not
    bit-reproducible. Do not claim determinism; do not "fix" runner seeds with `set_seed`.
 8. **Loss convention: `forward(input, target)` = `forward(prediction, ground_truth)`.**
    `utils.py` (`train_epoch` / `evaluate`) calls `criterion(output, tgt)`. `SGTLoss` is
@@ -140,7 +166,13 @@ Make targets: `make test` (pytest) · `make lint` (flake8 + isort --check + blac
     scored target does not change `forward`'s output.
 11. **Data leakage / normalization.** Per-sequence `StandardScaler().fit_transform`
     happens inside each real loader's per-entity loop BEFORE stacking/splitting (now via
-    `data/_common.scale_and_stack`). The synthetic generator also standardizes per
+    `data/_common.scale_and_stack`). Both real loaders then call
+    `check_not_step_function` (refuses > 50 % exactly-zero increments) and
+    `residual_scale_estimate` **raises** below `min_scale=1e-4` — the weekly-reported OWID
+    file produced a step function with `residual_scale = 1e-6` and 11 degenerate runs.
+    OWID reads the daily OWID/JHU **wide** file (`config.DATA_URL`); RVR reads the CDC SODA
+    endpoint with `$select` + a `count(*)` row check and drops the `US` / `Region N`
+    aggregate jurisdictions (sums of the state series). The synthetic generator also standardizes per
     sequence (`standardize=True`, the default; diagnostic/plot callers pass `False`).
     `create_dataloaders` splits at the SEQUENCE level (test first, then val) with
     `val_relative = val_split / (1 - test_split)`. Never add a global scaler in
@@ -170,6 +202,18 @@ Make targets: `make test` (pytest) · `make lint` (flake8 + isort --check + blac
 - `train.py`'s `exp_transform` is a **label only** (logged, never applied); the real
   transform is in `data/synthetic/generate_data.py`. Runners must pass the same value
   to both `generate_data` and `train`.
+- Raw real-data files are `data/raw/owid_jhu_new_cases.csv` and
+  `data/external/rvr_us_hospitalization_daily.csv` (new names on purpose: the old
+  `dataset.csv` was the weekly-rebased OWID file and the old `rvr_us_data.csv` a 3.8 MB
+  truncated export — a stale copy must never be picked up). Processed names are unchanged
+  (`dataset.npy`, `rvr_us_data.npy`). `Turkmenistan` is absent from the JHU file (39 of the
+  40 listed countries → 117 sequences); `--all-locations` applies a zero-fraction rule instead.
+- Runner CLI params use **plain defaults**, not `typer.Option(...)` — tests call `main(...)`
+  directly and an `OptionInfo` default is truthy (`resume`, `all_locations`,
+  `include_aggregates` would silently flip).
+- `scripts/run_sweep.sh` is stage-selectable (`STAGES=`) and always passes `--resume`;
+  it must be launched with `nohup` and **`mlruns.db` must never be deleted between
+  launches** (the JupyterHub notebook's first cell did exactly that).
 - Classical (non-SGT) runs still log default `sgt_loss_q` / `sgt_loss_p` — filter on
   `loss_type == "sgt"` before using `sgt_loss_*` columns.
 - `calculate_metrics.py` / `calculate_dispersion_scaling.py` regenerate synthetic data

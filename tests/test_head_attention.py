@@ -29,7 +29,7 @@ def test_embed_dim_divisible_by_every_head_count():
 @patch("skewed_sequences.experiments.run_experiments.head_attention_data.run_training_config")
 @patch("skewed_sequences.experiments.run_experiments.head_attention_data.generate_data_main")
 def test_main_sweeps_heads_with_fixed_width_and_shared_seed(mock_gen, mock_run):
-    main(n_runs=1, n_sequences=10, num_epochs=1)
+    main(n_runs=1, n_sequences=10, num_epochs=1, resume=False)
 
     assert mock_gen.call_count == 1  # heavy-tailed dataset generated once
     assert mock_run.call_count == len(HEAD_COUNTS) * len(head_sweep_loss_configs())
@@ -45,3 +45,15 @@ def test_main_sweeps_heads_with_fixed_width_and_shared_seed(mock_gen, mock_run):
     # All runs within one run_idx share the same seed (seed-paired head configs).
     seeds = {call.kwargs["seed"] for call in mock_run.call_args_list}
     assert len(seeds) == 1
+
+
+@patch("skewed_sequences.experiments.run_experiments.head_attention_data.draw_experiment_seed")
+@patch("skewed_sequences.experiments.run_experiments.head_attention_data.run_training_config")
+@patch("skewed_sequences.experiments.run_experiments.head_attention_data.generate_data_main")
+def test_main_resume_reuses_logged_seed(mock_gen, mock_run, mock_seed):
+    mock_seed.return_value = 4242
+    main(n_runs=1, n_sequences=10, num_epochs=1, resume=True)
+    mock_seed.assert_called_once_with("head-heavy-tailed_run_1", "transformer", True)
+    assert all(
+        c.kwargs["seed"] == 4242 and c.kwargs["resume"] is True for c in mock_run.call_args_list
+    )

@@ -13,7 +13,7 @@ every head configuration sees the same data split and initialization seed
 within-run comparison of head counts for each loss.
 """
 
-import random
+from typing import Annotated
 
 import typer
 
@@ -25,10 +25,15 @@ from skewed_sequences.config import (
     NUM_WORKERS,
     PROCESSED_DATA_DIR,
     SYNTHETIC_DATA_CONFIGS,
+    SYNTHETIC_N_SEQUENCES,
+    SYNTHETIC_STRIDE,
     TRAINING_CONFIGS,
 )
 from skewed_sequences.data.synthetic.generate_data import main as generate_data_main
-from skewed_sequences.experiments.run_experiments._runner import run_training_config
+from skewed_sequences.experiments.run_experiments._runner import (
+    draw_experiment_seed,
+    run_training_config,
+)
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -59,13 +64,20 @@ def head_sweep_loss_configs() -> list[dict]:
 @app.command()
 def main(
     n_runs: int = N_RUNS,
-    n_sequences: int = 1000,
-    stride: int = 5,
+    n_sequences: int = SYNTHETIC_N_SEQUENCES,
+    stride: int = SYNTHETIC_STRIDE,
     num_layers: int = 4,
     batch_size: int = BATCH_SIZE,
     num_epochs: int = NUM_EPOCHS,
     early_stopping_patience: int = EARLY_STOPPING_PATIENCE,
     num_workers: int = NUM_WORKERS,
+    resume: Annotated[
+        bool,
+        typer.Option(
+            help="Reuse the seed already logged for an experiment and skip configs that "
+            "already have a FINISHED run (continue a killed sweep)."
+        ),
+    ] = True,
 ):
     heavy_cfg = next(c for c in SYNTHETIC_DATA_CONFIGS if c["experiment_name"] == "heavy-tailed")
     # Dedicated dataset file — must NOT reuse the canonical synthetic_dataset.npy that
@@ -93,8 +105,8 @@ def main(
     counter = 0
     for run_idx in range(1, n_runs + 1):
         # One seed per run, shared across head counts AND losses -> seed-paired.
-        experiment_seed = random.randint(0, 2**32 - 1)
         experiment_name = f"head-heavy-tailed_run_{run_idx}"
+        experiment_seed = draw_experiment_seed(experiment_name, "transformer", resume)
 
         for num_heads in HEAD_COUNTS:
             for cfg in loss_configs:
@@ -117,6 +129,7 @@ def main(
                     num_epochs=num_epochs,
                     early_stopping_patience=early_stopping_patience,
                     num_workers=num_workers,
+                    resume=resume,
                 )
                 typer.echo(
                     f"==== Completed: {experiment_name} heads={num_heads} loss={cfg['loss_type']}"

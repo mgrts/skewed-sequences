@@ -111,6 +111,20 @@ class SkewedGeneralizedT:
         bracket = 1 + (np.abs(z) ** self.p) / denom
         return self.norm_const * bracket ** (-(1 / self.p + self.qp))
 
+    def logpdf(self, x):
+        """``log(pdf(x))`` computed in log space (no underflow deep in the tails).
+
+        Same formula as :meth:`pdf` — any change there must be mirrored here
+        (``tests/test_generate_data.py`` pins ``logpdf == log(pdf)``).
+        """
+        x = np.asarray(x, dtype=float)
+        z = x - self.mu + self.m
+        sgn_z = np.sign(z)
+        denom = self.qp * (self.sigma * self.v) ** self.p * (1 + self.lam * sgn_z) ** self.p
+        return np.log(self.norm_const) - (1 / self.p + self.qp) * np.log1p(
+            np.abs(z) ** self.p / denom
+        )
+
     def rvs(self, size=1):
         """Sample via a numerically-integrated inverse CDF.
 

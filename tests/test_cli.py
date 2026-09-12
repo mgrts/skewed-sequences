@@ -32,3 +32,15 @@ def test_data_help():
 def test_experiments_help():
     result = runner.invoke(app, ["experiments", "--help"])
     assert result.exit_code == 0
+
+
+def test_run_lambda_sweep_help():
+    result = runner.invoke(app, ["experiments", "run-lambda-sweep", "main", "--help"])
+    assert result.exit_code == 0
+    assert "resume" in result.output and "dataset" in result.output
+
+
+def test_increment_fit_help():
+    result = runner.invoke(app, ["experiments", "increment-fit", "main", "--help"])
+    assert result.exit_code == 0
+    assert "output-path" in result.output

@@ -1,4 +1,4 @@
-import random
+from typing import Annotated
 
 import typer
 
@@ -13,7 +13,10 @@ from skewed_sequences.config import (
     STRIDE,
     TRAINING_CONFIGS,
 )
-from skewed_sequences.experiments.run_experiments._runner import run_training_config
+from skewed_sequences.experiments.run_experiments._runner import (
+    draw_experiment_seed,
+    run_training_config,
+)
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -26,6 +29,13 @@ def main(
     num_epochs: int = NUM_EPOCHS,
     early_stopping_patience: int = EARLY_STOPPING_PATIENCE,
     num_workers: int = NUM_WORKERS,
+    resume: Annotated[
+        bool,
+        typer.Option(
+            help="Reuse the seed already logged for an experiment and skip configs that "
+            "already have a FINISHED run (continue a killed sweep)."
+        ),
+    ] = True,
 ):
     experiment_name_base = "covid-owid"
     dataset_path = PROCESSED_DATA_DIR / "dataset.npy"
@@ -38,8 +48,8 @@ def main(
     # configs, so replicates are seed-paired across loss types (paired Wilcoxon).
     for run_idx in range(1, n_runs + 1):
         for model_type in MODEL_TYPES:
-            experiment_seed = random.randint(0, 2**32 - 1)
             experiment_name = f"{experiment_name_base}_run_{run_idx}"
+            experiment_seed = draw_experiment_seed(experiment_name, model_type, resume)
 
             for training_config in training_configs:
                 experiment_counter += 1
@@ -61,6 +71,7 @@ def main(
                     num_epochs=num_epochs,
                     early_stopping_patience=early_stopping_patience,
                     num_workers=num_workers,
+                    resume=resume,
                 )
 
                 typer.echo(

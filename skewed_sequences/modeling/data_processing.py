@@ -57,12 +57,23 @@ def create_dataloaders(
     stride: int = 1,
     seed: int = 42,
     num_workers: int = 0,
+    min_split_sequences: int = 1,
 ) -> Tuple[DataLoader, DataLoader, DataLoader, np.ndarray]:
     # Split at the sequence level to prevent leakage
     train_data, test_data = train_test_split(data, test_size=test_split, random_state=seed)
     # val_split is relative to the remaining train portion
     val_relative = val_split / (1 - test_split)
     train_data, val_data = train_test_split(train_data, test_size=val_relative, random_state=seed)
+
+    # A dataset that is too small splits into 1-sequence val/test sets without any
+    # error (the truncated RVR download gave 6 / 1 / 1). Fail loudly instead.
+    n_train, n_val, n_test = len(train_data), len(val_data), len(test_data)
+    if min(n_train, n_val, n_test) < min_split_sequences:
+        raise ValueError(
+            f"Split too small: train/val/test = {n_train}/{n_val}/{n_test} sequences "
+            f"(need >= {min_split_sequences} each; {len(data)} sequences in total). "
+            "The dataset is too small or its download/processing is broken."
+        )
 
     persistent = num_workers > 0
     train_loader = DataLoader(

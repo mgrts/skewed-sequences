@@ -1,6 +1,7 @@
 """Tests for skewed_sequences.modeling.data_processing."""
 
 import numpy as np
+import pytest
 import torch
 
 from skewed_sequences.modeling.data_processing import SlidingWindowDataset, create_dataloaders
@@ -91,3 +92,27 @@ class TestCreateDataloaders:
         assert src.shape[1] == 20
         assert tgt.shape[1] == 5
         assert src.shape[0] <= 8
+
+
+class TestMinSplitGuard:
+    def test_tiny_dataset_raises_with_min_split(self):
+        """8 sequences split 6/1/1 (the truncated RVR download) must fail loudly."""
+        data = np.random.randn(8, 40, 1).astype(np.float32)
+        with pytest.raises(ValueError, match="Split too small"):
+            create_dataloaders(
+                data,
+                context_len=20,
+                output_len=5,
+                batch_size=8,
+                test_split=0.1,
+                val_split=0.1,
+                seed=0,
+                min_split_sequences=5,
+            )
+
+    def test_default_keeps_tiny_datasets_usable(self):
+        data = np.random.randn(8, 40, 1).astype(np.float32)
+        train_dl, val_dl, test_dl, _ = create_dataloaders(
+            data, context_len=20, output_len=5, batch_size=8, test_split=0.1, val_split=0.1
+        )
+        assert len(val_dl.dataset) > 0 and len(test_dl.dataset) > 0

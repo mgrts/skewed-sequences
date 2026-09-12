@@ -109,6 +109,7 @@ def main(
     sgt_loss_p: float = 2.0,
     exp_transform: bool = False,
     experiment_name: str = "Transformer-SGT-synthetic",
+    min_split_sequences: int = 5,
 ):
     set_seed(seed)
     device = torch.device(
@@ -142,6 +143,7 @@ def main(
         stride=stride,
         seed=seed,
         num_workers=num_workers,
+        min_split_sequences=min_split_sequences,
     )
 
     if model_type == "transformer":

@@ -181,6 +181,12 @@ _register_lazy(
 )
 _register_lazy(
     experiments_app,
+    "skewed_sequences.experiments.run_experiments.lambda_sweep_data",
+    name="run-lambda-sweep",
+    help="Run the fine skew (lambda) sub-sweep on the skewed synthetic datasets.",
+)
+_register_lazy(
+    experiments_app,
     "skewed_sequences.experiments.collect_results",
     name="collect-results",
     help="Collect MLflow experiment results into CSV.",
@@ -202,6 +208,12 @@ _register_lazy(
     "skewed_sequences.experiments.calculate_metrics",
     name="metrics",
     help="Compute dataset metrics.",
+)
+_register_lazy(
+    experiments_app,
+    "skewed_sequences.experiments.increment_fit",
+    name="increment-fit",
+    help="Fit SGT (lambda, q) by MLE to each dataset's one-step increments (parameter guidance).",
 )
 
 

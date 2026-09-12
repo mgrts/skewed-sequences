@@ -11,6 +11,12 @@ rows into the numbers a comparison actually needs:
 * ``best_methods`` — one row per (dataset, model): the overall best loss and
   whether the best SGT config beats the best baseline significantly (the B15
   summary table: dataset x best method x significance).
+* ``anchor_comparisons`` — pre-registered SGT anchors (Cauchy-like, p=1.5,
+  MSE-like, MAE-like) vs every baseline, *without* best-of-grid selection, so the
+  numbers carry no winner's curse.
+* ``lambda_effect`` — every skewed (``lambda != 0``) SGT config vs the symmetric
+  config with the same (p, q), seed-paired: does the asymmetric loss help?
+* ``head_sweep_summary`` — the multi-head study, per head count vs single-head.
 
 Pairing: the grid runners draw the per-run seed ONCE per ``(run_idx, model_type)``
 and reuse it across every loss type, so all losses in a run share the same data
@@ -282,11 +288,115 @@ def head_sweep_summary(df: pd.DataFrame, metric: str) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values(HEAD_CONFIG_KEYS + ["num_heads"])
 
 
+# Pre-registered SGT anchors (p, q, lambda) compared against every baseline WITHOUT
+# best-of-grid selection (so no winner's curse): the Cauchy-like, mid-norm robust,
+# MSE-like and MAE-like corners of the grid.
+ANCHORS = ((2.0, 2.5, 0.0), (1.5, 2.5, 0.0), (2.0, 20.0, 0.0), (1.0, 20.0, 0.0))
+ANCHOR_LABELS = {
+    (2.0, 2.5, 0.0): "cauchy-like",
+    (1.5, 2.5, 0.0): "p1.5-robust",
+    (2.0, 20.0, 0.0): "mse-like",
+    (1.0, 20.0, 0.0): "mae-like",
+}
+LAMBDA_GROUP_KEYS = GROUP_KEYS + ["sgt_loss_p", "sgt_loss_q"]
+
+
+def anchor_comparisons(df: pd.DataFrame, metric: str, anchors=ANCHORS) -> pd.DataFrame:
+    """Fixed SGT anchors vs each classical baseline (paired Wilcoxon), per (dataset, model).
+
+    Unlike ``compare_sgt_vs_baselines`` no SGT config is *selected* on the data, so
+    a significant difference here is confirmatory rather than a screen.
+    """
+    finished = _finished(df).dropna(subset=[metric])
+    if finished.empty:
+        return pd.DataFrame()
+    rows = []
+    for group_vals, dsub in finished.groupby(GROUP_KEYS):
+        dataset, model_type = group_vals
+        sgt = dsub[dsub["loss_type"] == "sgt"]
+        baselines = dsub[dsub["loss_type"] != "sgt"]
+        for anchor in anchors:
+            sgt_cfg = _select(sgt, SGT_CONFIG_KEYS, anchor)
+            if sgt_cfg.empty:
+                continue
+            for loss_type, lsub in baselines.groupby("loss_type"):
+                sgt_vals, base_vals, n_pairs = _paired_vectors(sgt_cfg, lsub, metric)
+                p = _wilcoxon_p(sgt_vals, base_vals)
+                rows.append(
+                    {
+                        "dataset": dataset,
+                        "model_type": model_type,
+                        "metric": metric,
+                        "anchor": ANCHOR_LABELS.get(tuple(anchor), str(anchor)),
+                        "sgt_p": anchor[0],
+                        "sgt_q": anchor[1],
+                        "sgt_lambda": anchor[2],
+                        "baseline": loss_type,
+                        "sgt_mean": float(np.mean(sgt_vals)) if n_pairs else np.nan,
+                        "baseline_mean": float(np.mean(base_vals)) if n_pairs else np.nan,
+                        "mean_diff": float(np.mean(sgt_vals - base_vals)) if n_pairs else np.nan,
+                        "median_diff": (
+                            float(np.median(sgt_vals) - np.median(base_vals))
+                            if n_pairs
+                            else np.nan
+                        ),
+                        "wilcoxon_p": p,
+                        "significant": bool(p < ALPHA) if np.isfinite(p) else False,
+                        "n_pairs": n_pairs,
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+def lambda_effect(df: pd.DataFrame, metric: str) -> pd.DataFrame:
+    """Skewed (``lambda != 0``) SGT vs the symmetric config with the same (p, q).
+
+    Seed-paired within each (dataset, model, p, q); ``mean_diff < 0`` means the
+    asymmetric loss improved ``metric``. Configs without a ``lambda = 0`` anchor are
+    skipped.
+    """
+    finished = _finished(df).dropna(subset=[metric])
+    sgt = finished[finished["loss_type"] == "sgt"] if not finished.empty else finished
+    if sgt.empty:
+        return pd.DataFrame()
+    rows = []
+    for group_vals, g in sgt.groupby(LAMBDA_GROUP_KEYS):
+        dataset, model_type, p_, q_ = group_vals
+        symmetric = g[g["sgt_loss_lambda"] == 0.0]
+        if symmetric.empty:
+            continue
+        for lam, gl in g[g["sgt_loss_lambda"] != 0.0].groupby("sgt_loss_lambda"):
+            skew_vals, sym_vals, n_pairs = _paired_vectors(gl, symmetric, metric)
+            p = _wilcoxon_p(skew_vals, sym_vals)
+            mean_diff = float(np.mean(skew_vals - sym_vals)) if n_pairs else np.nan
+            rows.append(
+                {
+                    "dataset": dataset,
+                    "model_type": model_type,
+                    "metric": metric,
+                    "sgt_p": p_,
+                    "sgt_q": q_,
+                    "sgt_lambda": lam,
+                    "n_pairs": n_pairs,
+                    "mean_symmetric": float(np.mean(sym_vals)) if n_pairs else np.nan,
+                    "mean_skewed": float(np.mean(skew_vals)) if n_pairs else np.nan,
+                    "mean_diff": mean_diff,
+                    "median_diff": (
+                        float(np.median(skew_vals) - np.median(sym_vals)) if n_pairs else np.nan
+                    ),
+                    "wilcoxon_p": p,
+                    "significant": bool(p < ALPHA) if np.isfinite(p) else False,
+                    "skewed_better": bool(np.isfinite(mean_diff) and mean_diff < 0),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
 @app.command()
 def main(
     input_path: Path = REPORTS_DIR / "experiment_results.csv",
     output_path: Path = REPORTS_DIR / "experiment_summary.csv",
-    metric: str = "best_test_smape",
+    metric: str = "best_test_mase",
 ):
     """Aggregate replicate runs and test SGT vs baselines on ``metric``."""
     df = pd.read_csv(input_path)
@@ -299,6 +409,8 @@ def main(
     comparisons = compare_sgt_vs_baselines(main_df, metric)
     best = best_methods(main_df, metric)
     head = head_sweep_summary(df, metric)
+    anchors = anchor_comparisons(main_df, metric)
+    lambdas = lambda_effect(main_df, metric)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     grouped.to_csv(output_path, index=False)
@@ -310,6 +422,12 @@ def main(
     typer.echo(f"Wrote {len(grouped)} config summaries to {output_path}")
     typer.echo(f"Wrote {len(comparisons)} SGT-vs-baseline comparisons to {comp_path}")
     typer.echo(f"Wrote {len(best)} best-method rows to {best_path}")
+    anchors_path = output_path.with_name(f"{output_path.stem}_anchors.csv")
+    anchors.to_csv(anchors_path, index=False)
+    typer.echo(f"Wrote {len(anchors)} pre-registered anchor comparisons to {anchors_path}")
+    lambda_path = output_path.with_name(f"{output_path.stem}_lambda_effect.csv")
+    lambdas.to_csv(lambda_path, index=False)
+    typer.echo(f"Wrote {len(lambdas)} lambda-effect rows to {lambda_path}")
     if not head.empty:
         head_path = output_path.with_name(f"{output_path.stem}_head_sweep.csv")
         head.to_csv(head_path, index=False)

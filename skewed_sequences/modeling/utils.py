@@ -119,16 +119,32 @@ def persistence_metrics(dataloader: DataLoader, device: torch.device) -> dict:
     return compute_metrics(torch.cat(all_preds), torch.cat(all_targets))
 
 
-def residual_scale_estimate(data: np.ndarray, eps: float = 1e-6) -> float:
+def residual_scale_estimate(data: np.ndarray, min_scale: float = 1e-4) -> float:
     """Robust scale of the 1-step increments (MAD * 1.4826).
 
-    Used to put the robust-loss thresholds (Huber/Tukey/Cauchy) at the data's
-    residual scale instead of a fixed unit scale, so they actually enter their
-    robust regime rather than collapsing to MSE.
+    Used to put the robust-loss thresholds (SGT sigma, Huber/Tukey/Cauchy/
+    Charbonnier) at the data's residual scale instead of a fixed unit scale, so
+    they actually enter their robust regime rather than collapsing to MSE.
+
+    Raises ``ValueError`` when the scale is degenerate (``<= min_scale``) or not finite: that
+    happens when more than half of the increments are exactly zero (piecewise-
+    constant / weekly-reported data), and silently flooring it (the old ``eps``)
+    evaluates every robust loss 10^4-10^5x off scale — the June-2026 OWID runs.
     """
-    increments = np.diff(np.asarray(data)[:, :, 0], axis=1).ravel()
+    increments = np.diff(np.asarray(data, dtype=float)[:, :, 0], axis=1).ravel()
     mad = np.median(np.abs(increments - np.median(increments)))
-    return max(float(1.4826 * mad), eps)
+    scale = float(1.4826 * mad)
+    if not np.isfinite(scale):
+        raise ValueError("Residual scale is not finite: the data contain NaN/inf values.")
+    if not scale > min_scale:
+        zero_frac = float((increments == 0).mean()) if increments.size else 1.0
+        raise ValueError(
+            f"Residual scale is degenerate ({scale:.2e} < {min_scale}): {zero_frac:.1%} of "
+            "the one-step increments are exactly zero, so the data are piecewise constant "
+            "(weekly-reported source or a rolling mean over one). Every scale-dependent "
+            "loss would be meaningless — fix the loader instead of training."
+        )
+    return scale
 
 
 class EarlyStopping:

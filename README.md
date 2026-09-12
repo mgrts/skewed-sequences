@@ -22,6 +22,7 @@ models. It covers:
 | Cauchy | `CauchyLoss` |
 | Huber | `HuberLoss` |
 | Tukey bi-weight | `TukeyLoss` |
+| Charbonnier | `CharbonnierLoss` |
 
 All custom loss functions extend `torch.nn.Module` with a standard
 `forward(input, target)` interface (following the PyTorch convention where
@@ -74,7 +75,7 @@ LANL earthquakes, RVR US hospitalisations, Health & Fitness wearable data).
 │       ├── calculate_metrics.py
 │       └── calculate_dispersion_scaling.py
 │
-├── tests/                  <- Pytest test suite (141 tests)
+├── tests/                  <- Pytest test suite (242 tests)
 ├── data/                   <- Raw / interim / processed / external data
 ├── models/                 <- Saved model artefacts
 ├── mlruns/                 <- MLflow tracking store
@@ -202,10 +203,11 @@ poetry run skseq [OPTIONS] COMMAND [ARGS]...
 | Sub-command | Description |
 |-------------|-------------|
 | `generate-synthetic` | Generate synthetic SGT-distributed data |
-| `download-owid` | Download OWID COVID-19 CSV |
-| `process-owid` | Process OWID COVID-19 dataset into sequences |
+| `download-owid` | Download the daily OWID/JHU `new_cases.csv` (wide, cadence-validated) |
+| `process-owid` | Process OWID COVID-19 dataset into sequences (`--all-locations` for a rule-based country set) |
 | `process-lanl` | Process LANL earthquake dataset |
-| `process-rvr` | Process RVR US hospitalisation dataset |
+| `download-rvr` | Download the CDC RVR hospitalisation timeseries via the SODA API (row-count verified) |
+| `process-rvr` | Process RVR US hospitalisation dataset (aggregate jurisdictions dropped) |
 | `process-health-fitness` | Process health & fitness wearable data |
 
 ### `skseq train`
@@ -241,8 +243,11 @@ poetry run skseq plots main
 | `run-lanl` | LANL earthquake data |
 | `run-owid` | OWID COVID-19 data |
 | `run-rvr` | RVR US hospitalisation data |
+| `run-head-sweep` | Multi-head attention study (heavy-tailed synthetic, fixed width) |
+| `run-lambda-sweep` | Fine skew (λ) grid appended to the skewed synthetic experiments |
 | `collect-results` | Collect MLflow runs into `reports/experiment_results.csv` |
-| `aggregate-results` | Replicate summary stats + SGT-vs-baseline significance tests |
+| `aggregate-results` | Replicate summary stats + paired SGT-vs-baseline, anchor and λ-effect tests |
+| `increment-fit` | MLE of SGT (λ, q) on each dataset's one-step increments (parameter guidance) |
 | `dispersion-scaling` | Compute dispersion-scaling exponents |
 | `metrics` | Compute dataset-level statistical metrics |
 
@@ -261,9 +266,23 @@ All experiment commands accept these common options:
 | `--num-epochs` | 100 | Maximum training epochs |
 | `--early-stopping-patience` | 20 | Epochs without improvement before stopping |
 | `--num-workers` | 0 | DataLoader worker processes |
+| `--resume/--no-resume` | resume | Reuse the seed already logged for an experiment and skip configs that already have a FINISHED run |
 
-The `run-synthetic` command additionally accepts `--n-sequences` (default 10000)
-to control synthetic dataset size.
+The `run-synthetic`, `run-head-sweep` and `run-lambda-sweep` commands additionally
+accept `--n-sequences` and `--stride`, defaulting to `SYNTHETIC_N_SEQUENCES` (1000) and
+`SYNTHETIC_STRIDE` (5) from `config.py` — the three must agree because the λ sweep
+appends to the synthetic experiments.
+
+### Turnkey sweep (resumable)
+
+```bash
+# all stages, or a subset: STAGES=owid,rvr,lambda,collect
+nohup poetry run bash scripts/run_sweep.sh > sweep.log 2>&1 &
+```
+
+Every runner is called with `--resume`, so a killed sweep is simply re-launched
+with the same command. Never delete `mlruns.db` between launches — it holds the
+finished runs and their seeds.
 
 ## Docker
 
@@ -316,7 +335,7 @@ make pre-commit  # Run all pre-commit hooks
 
 ### Testing
 
-The test suite (141 tests) lives in `tests/`:
+The test suite (242 tests) lives in `tests/`:
 
 | Module | What it tests |
 |--------|---------------|
@@ -334,7 +353,12 @@ The test suite (141 tests) lives in `tests/`:
 | `test_runner.py` | Shared grid-runner helper kwarg expansion |
 | `test_mlflow_contract.py` | Producer/consumer MLflow key contract |
 | `test_collect_results.py` | MLflow → CSV collection |
-| `test_aggregate_results.py` | Replicate aggregation + significance |
+| `test_aggregate_results.py` | Replicate aggregation + significance (+ anchors, λ effect) |
+| `test_utils.py` | Residual-scale guard, metric helpers |
+| `test_owid_dataset.py` / `test_owid_load_data.py` | Daily wide-file loader + download validation |
+| `test_rvr_dataset.py` / `test_rvr_load_data.py` | Aggregate filter, SODA download + row-count check |
+| `test_head_attention.py` / `test_lambda_sweep.py` | Head study and λ sub-sweep runners |
+| `test_increment_fit.py` | SGT (λ, q) increment fit command |
 
 ```bash
 poetry run pytest          # or: make test
@@ -351,15 +375,19 @@ All experiment parameters live in `skewed_sequences/config.py`:
 | `OUTPUT_LENGTH` | 1 | Single-step prediction horizon |
 | `STRIDE` | 1 | Sliding window stride |
 | `N_RUNS` | 10 | Repetitions per experiment |
+| `SYNTHETIC_N_SEQUENCES` | 1000 | Synthetic sequences per dataset (all synthetic runners) |
+| `SYNTHETIC_STRIDE` | 5 | Window stride for the synthetic runners |
 | `SEED` | 927 | Random seed |
-| `MODEL_TYPES` | `(transformer, lstm)` | Architectures swept by every runner |
+| `MODEL_TYPES` | `(transformer,)` | Architectures swept by every runner (LSTM retained, not swept) |
 
 - **`SYNTHETIC_DATA_CONFIGS`** — defines the four synthetic dataset variants
   (λ, q, σ, kernel_size combinations)
-- **`TRAINING_CONFIGS`** — 35 training configurations: SGT parameter sweeps
-  (26 symmetric + 4 skewed nonzero-λ) + 5 baseline losses (MSE, MAE, Cauchy,
-  Huber, Tukey)
-- **`SGT_LOSS_LAMBDAS`** — λ values for the SGT loss lambda sweep experiment
+- **`TRAINING_CONFIGS`** — 36 training configurations: SGT parameter sweeps
+  (26 symmetric + 4 skewed nonzero-λ) + 6 baseline losses (MSE, MAE, Cauchy,
+  Huber, Tukey, Charbonnier)
+- **`LAMBDA_SWEEP_CONFIGS`** — 12 fine-skew SGT configurations (λ ∈ {0.1, 0.2, 0.3}
+  at p ∈ {2, 1.5} × q ∈ {2.5, 10}) for `run-lambda-sweep`
+- **`SGT_LOSS_LAMBDAS`** — λ values for the legacy `lambdas.py` script
 
 ## License
 

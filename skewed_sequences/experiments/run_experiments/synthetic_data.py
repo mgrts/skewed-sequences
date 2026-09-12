@@ -1,4 +1,4 @@
-import random
+from typing import Annotated
 
 import typer
 
@@ -10,12 +10,16 @@ from skewed_sequences.config import (
     NUM_EPOCHS,
     NUM_WORKERS,
     PROCESSED_DATA_DIR,
-    STRIDE,
     SYNTHETIC_DATA_CONFIGS,
+    SYNTHETIC_N_SEQUENCES,
+    SYNTHETIC_STRIDE,
     TRAINING_CONFIGS,
 )
 from skewed_sequences.data.synthetic.generate_data import main as generate_data_main
-from skewed_sequences.experiments.run_experiments._runner import run_training_config
+from skewed_sequences.experiments.run_experiments._runner import (
+    draw_experiment_seed,
+    run_training_config,
+)
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -23,14 +27,21 @@ app = typer.Typer(pretty_exceptions_show_locals=False)
 @app.command()
 def main(
     n_runs: int = N_RUNS,
-    n_sequences: int = 10000,
-    stride: int = STRIDE,
+    n_sequences: int = SYNTHETIC_N_SEQUENCES,
+    stride: int = SYNTHETIC_STRIDE,
     batch_size: int = BATCH_SIZE,
     num_epochs: int = NUM_EPOCHS,
     early_stopping_patience: int = EARLY_STOPPING_PATIENCE,
     num_workers: int = NUM_WORKERS,
     exp_transform: bool = False,
     exp_scale: float = 0.1,
+    resume: Annotated[
+        bool,
+        typer.Option(
+            help="Reuse the seed already logged for an experiment and skip configs that "
+            "already have a FINISHED run (continue a killed sweep)."
+        ),
+    ] = True,
 ):
     dataset_path = PROCESSED_DATA_DIR / "synthetic_dataset.npy"
     dataset_configs = SYNTHETIC_DATA_CONFIGS
@@ -70,10 +81,11 @@ def main(
         # same initialization seed (reproducible split + weight init; runs are NOT
         # bit-reproducible — see CLAUDE.md #7). This seed-pairs the replicates
         # across loss types, which the paired Wilcoxon in aggregate_results uses.
+        # With --resume the seed already logged under the experiment is reused.
         for run_idx in range(1, n_runs + 1):
             for model_type in MODEL_TYPES:
-                experiment_seed = random.randint(0, 2**32 - 1)
                 experiment_name = f"{base_experiment_name}_run_{run_idx}"
+                experiment_seed = draw_experiment_seed(experiment_name, model_type, resume)
 
                 for train_config in training_configs:
                     loss_type = train_config["loss_type"]
@@ -97,6 +109,7 @@ def main(
                         early_stopping_patience=early_stopping_patience,
                         num_workers=num_workers,
                         exp_transform=exp_transform,
+                        resume=resume,
                     )
                     typer.echo(f"==== Completed training: {experiment_name} ({model_type}) ====\n")
 

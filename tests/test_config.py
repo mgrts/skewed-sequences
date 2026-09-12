@@ -4,6 +4,8 @@ from skewed_sequences.config import (
     CONTEXT_LENGTH,
     DATA_DIR,
     FIGURES_DIR,
+    LAMBDA_SWEEP_CONFIGS,
+    LAMBDA_SWEEP_LAMBDAS,
     N_RUNS,
     OUTPUT_LENGTH,
     PROCESSED_DATA_DIR,
@@ -12,6 +14,8 @@ from skewed_sequences.config import (
     SEQUENCE_LENGTH,
     STRIDE,
     SYNTHETIC_DATA_CONFIGS,
+    SYNTHETIC_N_SEQUENCES,
+    SYNTHETIC_STRIDE,
     TRAINING_CONFIGS,
 )
 
@@ -33,6 +37,8 @@ def test_constants():
     assert STRIDE == 1
     assert OUTPUT_LENGTH == 1
     assert N_RUNS >= 1
+    assert SYNTHETIC_N_SEQUENCES == 1000
+    assert SYNTHETIC_STRIDE == 5
 
 
 def test_synthetic_data_configs():
@@ -65,3 +71,23 @@ def test_training_configs():
     for c in TRAINING_CONFIGS:
         if c["loss_type"] == "sgt":
             assert c["sgt_loss_q"] ** c["sgt_loss_p"] > 2.0 / c["sgt_loss_p"]
+
+
+def test_lambda_sweep_configs():
+    assert LAMBDA_SWEEP_LAMBDAS == (0.1, 0.2, 0.3)
+    assert len(LAMBDA_SWEEP_CONFIGS) == 12
+    for cfg in LAMBDA_SWEEP_CONFIGS:
+        assert cfg["loss_type"] == "sgt"
+        assert cfg["output_length"] == OUTPUT_LENGTH
+        assert 0 < cfg["sgt_loss_lambda"] < 0.5  # below the main grid's {0.5, 0.9}
+        assert cfg["sgt_loss_q"] ** cfg["sgt_loss_p"] > 2.0 / cfg["sgt_loss_p"]
+    # No overlap with the main grid (these are appended to it).
+    main_keys = {
+        (c["sgt_loss_p"], c["sgt_loss_q"], c["sgt_loss_lambda"])
+        for c in TRAINING_CONFIGS
+        if c["loss_type"] == "sgt"
+    }
+    sweep_keys = {
+        (c["sgt_loss_p"], c["sgt_loss_q"], c["sgt_loss_lambda"]) for c in LAMBDA_SWEEP_CONFIGS
+    }
+    assert not (main_keys & sweep_keys)

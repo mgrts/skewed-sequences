@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from skewed_sequences.experiments.aggregate_results import (
     best_methods,
@@ -155,3 +156,78 @@ def test_nonsignificant_when_baseline_ties():
         rows.append(_row("mae", 2.0, 2.0, 0.0, base + rng.normal(0, 0.001), run))
     c = compare_sgt_vs_baselines(pd.DataFrame(rows), "best_test_rmse")
     assert (~c["significant"]).all()
+
+
+# ---------------------------------------------------------------------------
+# anchor_comparisons + lambda_effect
+# ---------------------------------------------------------------------------
+
+from skewed_sequences.experiments.aggregate_results import (  # noqa: E402
+    ANCHORS,
+    anchor_comparisons,
+    lambda_effect,
+)
+
+
+def _anchor_df():
+    """SGT anchors (2, 2.5, 0) and (2, 20, 0) + mse/mae baselines, seed-paired."""
+    rows = []
+    for run in range(N_RUNS):
+        rows.append(_row("sgt", 2.0, 2.5, 0.0, 0.10 + 0.01 * run, run))  # cauchy-like: good
+        rows.append(_row("sgt", 2.0, 20.0, 0.0, 0.30 + 0.01 * run, run))  # mse-like: = mse
+        rows.append(
+            _row("sgt", 2.0, 10.0, 0.0, 0.05 + 0.01 * run, run)
+        )  # best-of-grid, NOT an anchor
+        rows.append(_row("mse", 2.0, 2.0, 0.0, 0.30 + 0.01 * run, run))
+        rows.append(_row("mae", 2.0, 2.0, 0.0, 0.20 + 0.01 * run, run))
+    return pd.DataFrame(rows)
+
+
+def test_anchor_comparisons_use_fixed_configs_not_best_of_grid():
+    a = anchor_comparisons(_anchor_df(), "best_test_rmse")
+    # Only the anchors present in the data are reported (2 of the 4), x 2 baselines.
+    assert set(a["anchor"]) == {"cauchy-like", "mse-like"} and len(a) == 4
+    assert 10.0 not in set(a["sgt_q"])  # the best-of-grid config is not selected
+    cauchy_vs_mae = a[(a["anchor"] == "cauchy-like") & (a["baseline"] == "mae")].iloc[0]
+    assert cauchy_vs_mae["mean_diff"] < 0 and cauchy_vs_mae["significant"]
+    mse_like_vs_mse = a[(a["anchor"] == "mse-like") & (a["baseline"] == "mse")].iloc[0]
+    assert mse_like_vs_mse["mean_diff"] == pytest.approx(0.0)
+    assert not mse_like_vs_mse["significant"]  # identical values -> undefined p -> not significant
+    assert (a["n_pairs"] == N_RUNS).all()
+
+
+def test_anchor_labels_cover_all_anchors():
+    from skewed_sequences.experiments.aggregate_results import ANCHOR_LABELS
+
+    assert set(ANCHOR_LABELS) == set(ANCHORS)
+
+
+def _lambda_df():
+    """(p=2, q=10): lambda=0 good, lambda=0.9 much worse, lambda=0.2 slightly better."""
+    rows = []
+    for run in range(N_RUNS):
+        rows.append(_row("sgt", 2.0, 10.0, 0.0, 0.20 + 0.01 * run, run))
+        rows.append(_row("sgt", 2.0, 10.0, 0.9, 0.50 + 0.01 * run, run))
+        rows.append(_row("sgt", 2.0, 10.0, 0.2, 0.19 + 0.01 * run, run))
+        rows.append(_row("sgt", 2.0, 2.5, 0.5, 0.40 + 0.01 * run, run))  # no lambda=0 twin
+        rows.append(_row("mse", 2.0, 2.0, 0.0, 0.30 + 0.01 * run, run))
+    return pd.DataFrame(rows)
+
+
+def test_lambda_effect_pairs_each_skewed_config_with_its_symmetric_twin():
+    lam = lambda_effect(_lambda_df(), "best_test_rmse")
+    assert set(lam["sgt_lambda"]) == {0.9, 0.2}  # (q=2.5, 0.5) has no lambda=0 anchor -> skipped
+    worse = lam[lam["sgt_lambda"] == 0.9].iloc[0]
+    assert worse["mean_diff"] == pytest.approx(0.30) and worse["significant"]
+    assert not worse["skewed_better"]
+    better = lam[lam["sgt_lambda"] == 0.2].iloc[0]
+    assert better["mean_diff"] == pytest.approx(-0.01) and better["skewed_better"]
+    assert (lam["n_pairs"] == N_RUNS).all()
+
+
+def test_lambda_effect_and_anchors_empty_inputs():
+    cols = ["dataset", "model_type", "loss_type", "sgt_loss_p", "sgt_loss_q", "sgt_loss_lambda"]
+    cols += ["random_state", "status", "best_test_rmse"]
+    assert lambda_effect(pd.DataFrame(columns=cols), "best_test_rmse").empty
+    assert anchor_comparisons(pd.DataFrame(columns=cols), "best_test_rmse").empty
+    assert lambda_effect(_df(), "best_test_rmse").empty  # only lambda=0 configs -> nothing to pair
