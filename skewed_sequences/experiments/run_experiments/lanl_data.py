@@ -31,6 +31,10 @@ def main(
     num_epochs: int = NUM_EPOCHS,
     early_stopping_patience: int = EARLY_STOPPING_PATIENCE,
     num_workers: int = NUM_WORKERS,
+    # --first-run: start at this run index (1-based) so the seeds of one sweep can be
+    # split across parallel processes; pairing is within a run index, so a split never
+    # breaks it. Each run index draws (or, with --resume, reuses) its own seed.
+    first_run: int = 1,
     resume: Annotated[
         bool,
         typer.Option(
@@ -46,7 +50,9 @@ def main(
     dataset_path: Path = PROCESSED_DATA_DIR / dataset_name
     training_configs = TRAINING_CONFIGS
 
-    total_experiments = len(training_configs) * n_runs * len(MODEL_TYPES)
+    if not 1 <= first_run <= n_runs:
+        raise typer.BadParameter(f"--first-run must be in [1, {n_runs}], got {first_run}")
+    total_experiments = len(training_configs) * (n_runs - first_run + 1) * len(MODEL_TYPES)
     experiment_counter = 0
 
     typer.echo(f"==== Using dataset: {dataset_path.name} ====")
@@ -55,7 +61,7 @@ def main(
     # configs, so replicates are seed-paired across loss types (paired Wilcoxon).
     # LANL names one experiment per loss type, so the resume lookup scans all of
     # a run's experiment names for an already-logged seed.
-    for run_idx in range(1, n_runs + 1):
+    for run_idx in range(first_run, n_runs + 1):
         for model_type in MODEL_TYPES:
             run_experiment_names = sorted(
                 {f"lanl_{cfg['loss_type']}_run_{run_idx}" for cfg in training_configs}

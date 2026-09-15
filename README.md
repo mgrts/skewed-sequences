@@ -269,6 +269,7 @@ All experiment commands accept these common options:
 | `--early-stopping-patience` | 20 | Epochs without improvement before stopping |
 | `--num-workers` | 0 | DataLoader worker processes |
 | `--resume/--no-resume` | resume | Reuse the seed already logged for an experiment and skip configs that already have a FINISHED run |
+| `--first-run` | 1 | Start at this run index (split one dataset's seeds across parallel processes) |
 
 The `run-synthetic`, `run-head-sweep` and `run-lambda-sweep` commands additionally
 accept `--n-sequences` and `--stride`, defaulting to `SYNTHETIC_N_SEQUENCES` (1000) and
@@ -285,6 +286,23 @@ nohup poetry run bash scripts/run_sweep.sh > sweep.log 2>&1 &
 Every runner is called with `--resume`, so a killed sweep is simply re-launched
 with the same command. Never delete `mlruns.db` between launches — it holds the
 finished runs and their seeds.
+
+### Parallel slots on one GPU
+
+```bash
+bash scripts/launch_parallel.sh     # OWID + both RVR series as 6 processes
+bash scripts/status_parallel.sh     # progress per slot + GPU utilisation
+```
+
+Each slot sets `SKSEQ_PROJ_ROOT` to its own directory (own `mlruns.db`, `data/`,
+`reports/`) and shares the code and virtualenv. `run-rvr` takes `--time-series`
+(repeatable) to run one series per process. Merge the stores afterwards:
+
+```bash
+poetry run skseq experiments collect-results main \
+  --tracking-uri sqlite:///$HOME/skewed-sequences/mlruns.db \
+  --tracking-uri sqlite:///$HOME/sweep_slots/owid_b/mlruns.db   # ... one per slot
+```
 
 ## Docker
 

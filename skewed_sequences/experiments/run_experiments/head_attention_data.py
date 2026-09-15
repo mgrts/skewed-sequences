@@ -71,6 +71,10 @@ def main(
     num_epochs: int = NUM_EPOCHS,
     early_stopping_patience: int = EARLY_STOPPING_PATIENCE,
     num_workers: int = NUM_WORKERS,
+    # --first-run: start at this run index (1-based) so the seeds of one sweep can be
+    # split across parallel processes; pairing is within a run index, so a split never
+    # breaks it. Each run index draws (or, with --resume, reuses) its own seed.
+    first_run: int = 1,
     resume: Annotated[
         bool,
         typer.Option(
@@ -101,9 +105,11 @@ def main(
     )
     typer.echo("Dataset generation complete.\n")
 
-    total = n_runs * len(HEAD_COUNTS) * len(loss_configs)
+    if not 1 <= first_run <= n_runs:
+        raise typer.BadParameter(f"--first-run must be in [1, {n_runs}], got {first_run}")
+    total = (n_runs - first_run + 1) * len(HEAD_COUNTS) * len(loss_configs)
     counter = 0
-    for run_idx in range(1, n_runs + 1):
+    for run_idx in range(first_run, n_runs + 1):
         # One seed per run, shared across head counts AND losses -> seed-paired.
         experiment_name = f"head-heavy-tailed_run_{run_idx}"
         experiment_seed = draw_experiment_seed(experiment_name, "transformer", resume)

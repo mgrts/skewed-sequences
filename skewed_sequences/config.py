@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -6,8 +7,11 @@ from loguru import logger
 # Load environment variables from .env file if it exists
 load_dotenv()
 
-# Paths
-PROJ_ROOT = Path(__file__).resolve().parents[1]
+# Paths. ``SKSEQ_PROJ_ROOT`` relocates every derived path (data/, reports/, mlruns.db)
+# to another directory while the code and the virtualenv stay where they are — this is
+# how several sweep processes run side by side on one GPU host, each with its own
+# MLflow store and processed data (see scripts/launch_parallel.sh).
+PROJ_ROOT = Path(os.environ.get("SKSEQ_PROJ_ROOT") or Path(__file__).resolve().parents[1])
 logger.info(f"PROJ_ROOT path is: {PROJ_ROOT}")
 
 # OWID COVID daily new cases. The ``owid-covid-data.csv`` on master was re-based on

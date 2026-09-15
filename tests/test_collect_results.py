@@ -236,3 +236,22 @@ def test_created_at_is_utc_datetime(mock_client_cls):
     ts = df.iloc[0]["created_at"]
     assert ts.tzinfo is not None
     assert ts.year == 2023
+
+
+@patch("skewed_sequences.experiments.collect_results.collect_experiment_results")
+def test_main_concatenates_multiple_stores(mock_collect, tmp_path):
+    from skewed_sequences.experiments.collect_results import main
+
+    mock_collect.side_effect = [
+        pd.DataFrame({"run_name": ["a"], "dataset": ["normal"]}),
+        pd.DataFrame({"run_name": ["b"], "dataset": ["covid-owid"]}),
+    ]
+    out = tmp_path / "res.csv"
+    main(output_path=out, tracking_uri=["sqlite:///one.db", "sqlite:///two.db"])
+    df = pd.read_csv(out)
+    assert list(df["run_name"]) == ["a", "b"]
+    assert list(df["store"]) == ["sqlite:///one.db", "sqlite:///two.db"]
+    assert [c.kwargs["tracking_uri"] for c in mock_collect.call_args_list] == [
+        "sqlite:///one.db",
+        "sqlite:///two.db",
+    ]

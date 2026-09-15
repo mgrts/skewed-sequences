@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
 import re
+from typing import Annotated, List, Optional
 
 from mlflow import MlflowClient
 from mlflow.entities import ViewType
@@ -128,9 +129,18 @@ def collect_experiment_results(
 @app.command()
 def main(
     output_path: Path = REPORTS_DIR / "experiment_results.csv",
-    since: str | None = typer.Option(
-        None, help="Only include runs started on or after this date (YYYY-MM-DD)."
-    ),
+    since: Annotated[
+        Optional[str],
+        typer.Option(help="Only include runs started on or after this date (YYYY-MM-DD)."),
+    ] = None,
+    tracking_uri: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            help="MLflow tracking URI(s) to read; repeatable. Default: the project's "
+            "mlruns.db. Several stores (parallel sweep processes) are concatenated; a "
+            "'store' column records which one each run came from."
+        ),
+    ] = None,
 ):
     """Collect all MLflow experiment results and save to CSV."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -139,10 +149,16 @@ def main(
     if since is not None:
         since_dt = datetime.strptime(since, "%Y-%m-%d").replace(tzinfo=timezone.utc)
 
-    typer.echo("Collecting experiment results from MLflow...")
-    df = collect_experiment_results(since=since_dt)
+    uris = list(tracking_uri) if tracking_uri else [TRACKING_URI]
+    frames = []
+    for uri in uris:
+        typer.echo(f"Collecting experiment results from {uri} ...")
+        part = collect_experiment_results(tracking_uri=uri, since=since_dt)
+        part["store"] = uri
+        frames.append(part)
+    df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     df.to_csv(output_path, index=False)
-    typer.echo(f"Saved {len(df)} runs to {output_path}")
+    typer.echo(f"Saved {len(df)} runs from {len(uris)} store(s) to {output_path}")
 
 
 if __name__ == "__main__":

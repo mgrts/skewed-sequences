@@ -29,6 +29,10 @@ def main(
     num_epochs: int = NUM_EPOCHS,
     early_stopping_patience: int = EARLY_STOPPING_PATIENCE,
     num_workers: int = NUM_WORKERS,
+    # --first-run: start at this run index (1-based) so the seeds of one sweep can be
+    # split across parallel processes; pairing is within a run index, so a split never
+    # breaks it. Each run index draws (or, with --resume, reuses) its own seed.
+    first_run: int = 1,
     resume: Annotated[
         bool,
         typer.Option(
@@ -41,12 +45,14 @@ def main(
     dataset_path = PROCESSED_DATA_DIR / "dataset.npy"
     training_configs = TRAINING_CONFIGS
 
-    total_experiments = len(training_configs) * n_runs * len(MODEL_TYPES)
+    if not 1 <= first_run <= n_runs:
+        raise typer.BadParameter(f"--first-run must be in [1, {n_runs}], got {first_run}")
+    total_experiments = len(training_configs) * (n_runs - first_run + 1) * len(MODEL_TYPES)
     experiment_counter = 0
 
     # Seed drawn once per (run_idx, model_type) and reused across all loss
     # configs, so replicates are seed-paired across loss types (paired Wilcoxon).
-    for run_idx in range(1, n_runs + 1):
+    for run_idx in range(first_run, n_runs + 1):
         for model_type in MODEL_TYPES:
             experiment_name = f"{experiment_name_base}_run_{run_idx}"
             experiment_seed = draw_experiment_seed(experiment_name, model_type, resume)

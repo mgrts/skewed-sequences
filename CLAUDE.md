@@ -69,6 +69,7 @@ skseq experiments collect-results main      # MLflow -> reports/experiment_resul
 skseq experiments aggregate-results main    # results.csv -> summary + SGT-vs-baseline tests (MASE default)
 skseq data download-owid download && skseq data process-owid main   # daily OWID/JHU wide file
 skseq data download-rvr download && skseq data process-rvr main     # CDC SODA endpoint, row-count verified
+bash scripts/launch_parallel.sh && bash scripts/status_parallel.sh  # real-data sweeps as 6 GPU-sharing slots
 STAGES=owid,rvr,lambda,collect nohup poetry run bash scripts/run_sweep.sh > sweep.log 2>&1 &   # resumable sweep
 skseq visualize-losses main
 
@@ -187,6 +188,9 @@ Make targets: `make test` (pytest) · `make lint` (flake8 + isort --check + blac
 
 ## Dev workflow
 
+- **Reinstalling an environment (laptop or JupyterHub pod): remove the old one first** —
+  `poetry env remove --all && poetry install`, then `poetry run pytest -q`. Never while a
+  sweep is running (stop it first; `--resume` continues it afterwards).
 - black + isort + flake8, all at **line length 99**, scoped to `skewed_sequences tests`.
   The 99 lives in `pyproject.toml` (`[tool.black]`, `[tool.isort]`),
   `.pre-commit-config.yaml` (the isort + black hook args), and `setup.cfg [flake8]` —
@@ -212,8 +216,16 @@ Make targets: `make test` (pytest) · `make lint` (flake8 + isort --check + blac
   directly and an `OptionInfo` default is truthy (`resume`, `all_locations`,
   `include_aggregates` would silently flip).
 - `scripts/run_sweep.sh` is stage-selectable (`STAGES=`) and always passes `--resume`;
-  it must be launched with `nohup` and **`mlruns.db` must never be deleted between
-  launches** (the JupyterHub notebook's first cell did exactly that).
+  it must be launched with `setsid nohup` from a terminal (a notebook-kernel child dies
+  with the kernel) and **`mlruns.db` must never be deleted between launches**.
+- **Parallel slots.** `SKSEQ_PROJ_ROOT=<dir>` relocates `mlruns.db`, `data/` and
+  `reports/` while the code and venv stay put; `scripts/launch_parallel.sh` uses it to run
+  the real-data sweeps as six processes on one GPU (OWID and each RVR series split by run
+  index via `--first-run`; RVR series selected with `--time-series`). Pairing is within a
+  run index, so the split is safe. Merge with
+  `collect-results main --tracking-uri <store> --tracking-uri <store> …` (adds a `store`
+  column). One process per slot root — two RVR series in one root would clobber
+  `rvr_us_data.npy`.
 - Classical (non-SGT) runs still log default `sgt_loss_q` / `sgt_loss_p` — filter on
   `loss_type == "sgt"` before using `sgt_loss_*` columns.
 - `calculate_metrics.py` / `calculate_dispersion_scaling.py` regenerate synthetic data

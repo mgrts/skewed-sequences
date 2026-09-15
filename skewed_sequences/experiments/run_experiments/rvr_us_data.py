@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, List, Optional
 
 import typer
 
@@ -21,6 +21,12 @@ from skewed_sequences.experiments.run_experiments._runner import (
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
+# The two RVR series and their experiment-name prefixes (names end in _run_<i>).
+RVR_SERIES = {
+    "average_inpatient_beds_occupied": "rvr-us-bed-occupancy",
+    "total_admissions_all_influenza_confirmed_past_7days": "rvr-us-influenza-cases",
+}
+
 
 @app.command()
 def main(
@@ -30,6 +36,18 @@ def main(
     num_epochs: int = NUM_EPOCHS,
     early_stopping_patience: int = EARLY_STOPPING_PATIENCE,
     num_workers: int = NUM_WORKERS,
+    # --first-run: start at this run index (1-based) so the seeds of one sweep can be
+    # split across parallel processes; pairing is within a run index, so a split never
+    # breaks it. Each run index draws (or, with --resume, reuses) its own seed.
+    first_run: int = 1,
+    time_series: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            help="RVR series column(s) to run; repeatable. Default: both series. Use one per "
+            "process to run the two series in parallel (each process needs its own "
+            "SKSEQ_PROJ_ROOT, because the loader writes rvr_us_data.npy)."
+        ),
+    ] = None,
     resume: Annotated[
         bool,
         typer.Option(
@@ -38,30 +56,29 @@ def main(
         ),
     ] = True,
 ):
-    time_series_list = [
-        "average_inpatient_beds_occupied",
-        "total_admissions_all_influenza_confirmed_past_7days",
-    ]
+    time_series_list = list(time_series) if time_series else list(RVR_SERIES)
+    unknown = [s for s in time_series_list if s not in RVR_SERIES]
+    if unknown:
+        raise typer.BadParameter(f"unknown time series {unknown}; choose from {list(RVR_SERIES)}")
+    if not 1 <= first_run <= n_runs:
+        raise typer.BadParameter(f"--first-run must be in [1, {n_runs}], got {first_run}")
 
     training_configs = TRAINING_CONFIGS
     dataset_path = PROCESSED_DATA_DIR / "rvr_us_data.npy"
 
-    total_experiments = len(time_series_list) * len(training_configs) * n_runs * len(MODEL_TYPES)
+    total_experiments = (
+        len(time_series_list) * len(training_configs) * (n_runs - first_run + 1) * len(MODEL_TYPES)
+    )
     experiment_counter = 0
 
-    for time_series in time_series_list:
-        if time_series == "average_inpatient_beds_occupied":
-            experiment_base_name = "rvr-us-bed-occupancy"
-        elif time_series == "total_admissions_all_influenza_confirmed_past_7days":
-            experiment_base_name = "rvr-us-influenza-cases"
-        else:
-            raise ValueError(f"Invalid time series: {time_series}")
+    for series in time_series_list:
+        experiment_base_name = RVR_SERIES[series]
 
-        create_dataset_main(time_series=time_series)
+        create_dataset_main(time_series=series)
 
         # Seed drawn once per (run_idx, model_type) and reused across all loss
         # configs, so replicates are seed-paired across loss types (paired Wilcoxon).
-        for run_idx in range(1, n_runs + 1):
+        for run_idx in range(first_run, n_runs + 1):
             for model_type in MODEL_TYPES:
                 experiment_name = f"{experiment_base_name}_run_{run_idx}"
                 experiment_seed = draw_experiment_seed(experiment_name, model_type, resume)

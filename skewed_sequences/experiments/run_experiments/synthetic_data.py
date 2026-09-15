@@ -35,6 +35,10 @@ def main(
     num_workers: int = NUM_WORKERS,
     exp_transform: bool = False,
     exp_scale: float = 0.1,
+    # --first-run: start at this run index (1-based) so the seeds of one sweep can be
+    # split across parallel processes; pairing is within a run index, so a split never
+    # breaks it. Each run index draws (or, with --resume, reuses) its own seed.
+    first_run: int = 1,
     resume: Annotated[
         bool,
         typer.Option(
@@ -47,7 +51,11 @@ def main(
     dataset_configs = SYNTHETIC_DATA_CONFIGS
     training_configs = TRAINING_CONFIGS
 
-    total_experiments = len(dataset_configs) * len(training_configs) * n_runs * len(MODEL_TYPES)
+    if not 1 <= first_run <= n_runs:
+        raise typer.BadParameter(f"--first-run must be in [1, {n_runs}], got {first_run}")
+    total_experiments = (
+        len(dataset_configs) * len(training_configs) * (n_runs - first_run + 1) * len(MODEL_TYPES)
+    )
     experiment_counter = 0
 
     for ds_config in dataset_configs:
@@ -82,7 +90,7 @@ def main(
         # bit-reproducible — see CLAUDE.md #7). This seed-pairs the replicates
         # across loss types, which the paired Wilcoxon in aggregate_results uses.
         # With --resume the seed already logged under the experiment is reused.
-        for run_idx in range(1, n_runs + 1):
+        for run_idx in range(first_run, n_runs + 1):
             for model_type in MODEL_TYPES:
                 experiment_name = f"{base_experiment_name}_run_{run_idx}"
                 experiment_seed = draw_experiment_seed(experiment_name, model_type, resume)
