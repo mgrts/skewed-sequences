@@ -69,7 +69,8 @@ skseq experiments collect-results main      # MLflow -> reports/experiment_resul
 skseq experiments aggregate-results main    # results.csv -> summary + SGT-vs-baseline tests (MASE default)
 skseq data download-owid download && skseq data process-owid main   # daily OWID/JHU wide file
 skseq data download-rvr download && skseq data process-rvr main     # CDC SODA endpoint, row-count verified
-PARTS=5 bash scripts/launch_parallel.sh && bash scripts/status_parallel.sh   # real-data sweeps as 1+3*PARTS GPU-sharing slots
+source scripts/mps.sh start && PARTS=7 MAX_ALIVE=6 bash scripts/launch_parallel.sh   # real-data sweeps as GPU-sharing slots (MPS + CPU-quota cap)
+bash scripts/status_parallel.sh                                                        # progress per slot; --merge collects every store
 STAGES=owid,rvr,lambda,collect nohup poetry run bash scripts/run_sweep.sh > sweep.log 2>&1 &   # resumable sweep
 skseq visualize-losses main
 
@@ -225,7 +226,14 @@ Make targets: `make test` (pytest) · `make lint` (flake8 + isort --check + blac
   (`owid_r3-4`, …), each its own process/root (`--first-run`/`--n-runs`; RVR series via
   `--time-series`). A run index lives in exactly one store, so seed pairing (within a run
   index) is safe and no two processes write one SQLite file; re-running with a different
-  `PARTS` is refused. Liveness is by `slot.pid` + a `SLOT EXIT=<code>` log marker.
+  `PARTS` is refused. `MAX_ALIVE` caps how many run at once (re-run the script to top up;
+  finished slots are recognised by their `SLOT EXIT=0` marker). Size `MAX_ALIVE` by the
+  pod's **cgroup CPU quota** (`/sys/fs/cgroup/cpu.max`), not the host's cores: each process
+  is CPU-launch-bound and needs ~1 core, and 18 processes on a small quota made zero
+  progress. Several CUDA processes must share the GPU through **NVIDIA MPS**
+  (`source scripts/mps.sh start` in the launching shell); without it they time-slice and
+  tiny kernels run far slower than serially. Liveness is by `slot.pid` + a
+  `SLOT EXIT=<code>` log marker.
   `scripts/status_parallel.sh --merge` runs `collect-results` over every store (adds a
   `store` column). One process per root — two RVR series in one root would clobber
   `rvr_us_data.npy`.

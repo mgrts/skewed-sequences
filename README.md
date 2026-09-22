@@ -290,10 +290,15 @@ finished runs and their seeds.
 ### Parallel slots on one GPU
 
 ```bash
-PARTS=5 bash scripts/launch_parallel.sh   # OWID + both RVR series, up to 1 + 3*PARTS processes
-bash scripts/status_parallel.sh           # progress per slot + GPU utilisation
-bash scripts/status_parallel.sh --merge   # collect-results over every store when done
+source scripts/mps.sh start                          # NVIDIA MPS so processes share the GPU
+PARTS=7 MAX_ALIVE=6 bash scripts/launch_parallel.sh  # cut into 1 + 3*PARTS slots, run 6 at once
+bash scripts/status_parallel.sh                      # progress per slot + GPU utilisation
+bash scripts/status_parallel.sh --merge              # collect-results over every store when done
 ```
+
+Re-run the launcher to top up as slots finish (or let the notebook watcher do it). Size
+`MAX_ALIVE` by the pod's CPU quota (`cat /sys/fs/cgroup/cpu.max`): every training process
+needs about one core.
 
 The launcher keeps whatever a dataset already has in the main `mlruns.db` there (one
 sequential resuming process) and cuts the remaining run indices into `PARTS` range

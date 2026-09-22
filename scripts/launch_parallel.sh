@@ -5,7 +5,14 @@
 #
 #     bash scripts/launch_parallel.sh                 # launch (idempotent; re-run to resume dead slots)
 #     PARTS=10 bash scripts/launch_parallel.sh        # more slots per dataset (default 5)
+#     MAX_ALIVE=6 bash scripts/launch_parallel.sh     # keep at most 6 processes running; re-run to top up
 #     bash scripts/status_parallel.sh                 # progress per slot + GPU
+#
+# Concurrency: PARTS fixes how the work is CUT (cannot change once slots exist);
+# MAX_ALIVE limits how many slots RUN at once (can change any time). Size MAX_ALIVE by
+# the pod's CPU quota (cat /sys/fs/cgroup/cpu.max), not by the host's core count: each
+# training process is CPU-launch-bound and needs about one full core. Run the GPU under
+# NVIDIA MPS (scripts/mps.sh start) so the processes share it instead of time-slicing.
 #
 # How the work is split
 #   For each dataset (owid, rvr_bed, rvr_flu) the script looks into the MAIN store
@@ -36,6 +43,7 @@ MAIN_ROOT="${MAIN_ROOT:-$REPO}"
 WORK_BASE="${WORK_BASE:-$HOME/sweep_slots}"
 N_RUNS="${N_RUNS:-10}"
 PARTS="${PARTS:-5}"
+MAX_ALIVE="${MAX_ALIVE:-0}"              # 0 = no limit
 EXTRA="${EXTRA:-}"                       # extra runner flags, e.g. "--num-epochs 1" for a smoke test
 DATASETS="${DATASETS:-owid rvr_bed rvr_flu}"
 export MPLBACKEND=Agg
@@ -89,9 +97,20 @@ PY
 }
 alive() { local pf="$1"; [ -f "${pf}" ] && kill -0 "$(cat "${pf}")" 2>/dev/null; }
 
+n_alive() {
+  local n=0 pf
+  for pf in "${MAIN_ROOT}/slot.pid" "${WORK_BASE}"/*/slot.pid; do alive "${pf}" && n=$((n + 1)); done
+  echo "${n}"
+}
+slot_done() { tail -n 3 "$1" 2>/dev/null | grep -q 'SLOT EXIT=0'; }
+
 launch() {  # name root cmd
   local name="$1" root="$2" cmd="$3" pf="$2/slot.pid" logfile="$2/sweep_$1.log"
   if alive "${pf}"; then log "${name}: already running — skipped"; return; fi
+  if slot_done "${logfile}"; then log "${name}: finished earlier — skipped"; return; fi
+  if [ "${MAX_ALIVE}" -gt 0 ] && [ "$(n_alive)" -ge "${MAX_ALIVE}" ]; then
+    log "${name}: not started (MAX_ALIVE=${MAX_ALIVE} reached) — re-run later to top up"; return
+  fi
   mkdir -p "${root}/data/processed" "${root}/data/external" "${root}/reports"
   [ -f "${root}/data/processed/dataset.npy" ] || cp "${REPO}/data/processed/dataset.npy" "${root}/data/processed/" 2>/dev/null
   [ -f "${root}/data/external/rvr_us_hospitalization_daily.csv" ] || cp "${REPO}/data/external/rvr_us_hospitalization_daily.csv" "${root}/data/external/" 2>/dev/null
@@ -116,25 +135,37 @@ for ds in ${DATASETS}; do
   [ "${remaining}" -le 0 ] && { log "${ds}: runs 1-${done_upto} in the main store; nothing to split"; continue; }
   parts=$(( PARTS < remaining ? PARTS : remaining ))
   chunk=$(( (remaining + parts - 1) / parts ))
+  # plan this dataset's ranges first ...
+  planned=""
   a=$((done_upto + 1))
   while [ "${a}" -le "${N_RUNS}" ]; do
     b=$(( a + chunk - 1 )); [ "${b}" -gt "${N_RUNS}" ] && b="${N_RUNS}"
     name="${ds}_r${a}-${b}"
-    # a different cut of the same dataset already on disk -> refuse
-    other=$(ls -d "${WORK_BASE}/${ds}_r"* 2>/dev/null | grep -v "/${name}$" || true)
-    if [ -n "${other}" ] && ! ls -d "${WORK_BASE}/${name}" >/dev/null 2>&1; then
-      log "${ds}: existing slots use a different split (${other//$'\n'/ }); keep the same PARTS or move them away"; exit 1
-    fi
+    planned="${planned} ${name}"
     SLOT_NAMES+=("${name}"); SLOT_ROOTS+=("${WORK_BASE}/${name}")
     SLOT_CMDS+=("poetry run skseq experiments ${runner} --first-run ${a} --n-runs ${b} --resume ${EXTRA}")
     a=$((b + 1))
+  done
+  # ... then refuse if a slot dir on disk is not one of them (a different cut would
+  # duplicate run indices across stores). Deferred/missing planned slots are fine.
+  for existing in "${WORK_BASE}/${ds}_r"*; do
+    [ -d "${existing}" ] || continue
+    case " ${planned} " in *" $(basename "${existing}") "*) ;; *)
+      log "${ds}: slot $(basename "${existing}") on disk is not part of the PARTS=${PARTS} split (${planned# }); keep the PARTS you launched with or move it away"; exit 1 ;;
+    esac
   done
 done
 
 total=$(( ${#SLOT_NAMES[@]} + (${#MAIN_CMDS[@]} > 0 ? 1 : 0) ))
 cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 8)
-THREADS=$(( cores / (total > 0 ? total : 1) )); [ "${THREADS}" -lt 1 ] && THREADS=1
-log "plan: ${total} processes (${#SLOT_NAMES[@]} slots + $(( ${#MAIN_CMDS[@]} > 0 ? 1 : 0 )) main), ${THREADS} CPU thread(s) each, PARTS=${PARTS}, N_RUNS=${N_RUNS}"
+# honour a cgroup CPU quota (JupyterHub pods usually have one far below the host's cores)
+if [ -r /sys/fs/cgroup/cpu.max ]; then
+  read -r quota period < /sys/fs/cgroup/cpu.max
+  [ "${quota}" != "max" ] && cores=$(( (quota + period - 1) / period ))
+fi
+concurrent=$(( MAX_ALIVE > 0 && MAX_ALIVE < total ? MAX_ALIVE : total ))
+THREADS=$(( cores / (concurrent > 0 ? concurrent : 1) )); [ "${THREADS}" -lt 1 ] && THREADS=1
+log "plan: ${total} processes (${#SLOT_NAMES[@]} slots + $(( ${#MAIN_CMDS[@]} > 0 ? 1 : 0 )) main), up to ${concurrent} at once, ${THREADS} CPU thread(s) each (${cores} CPUs available), PARTS=${PARTS}, N_RUNS=${N_RUNS}"
 
 # ---- launch ------------------------------------------------------------------------
 if [ "${#MAIN_CMDS[@]}" -gt 0 ]; then
