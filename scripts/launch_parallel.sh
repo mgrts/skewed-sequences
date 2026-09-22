@@ -138,7 +138,7 @@ log "plan: ${total} processes (${#SLOT_NAMES[@]} slots + $(( ${#MAIN_CMDS[@]} > 
 
 # ---- launch ------------------------------------------------------------------------
 if [ "${#MAIN_CMDS[@]}" -gt 0 ]; then
-  chain=$(printf '%s; ' "${MAIN_CMDS[@]}")
+  chain=$(printf '%s; ' "${MAIN_CMDS[@]}"); chain="${chain%; }"   # no trailing ';' (the wrapper appends its own)
   launch "main" "${MAIN_ROOT}" "${chain}"
 fi
 for i in "${!SLOT_NAMES[@]}"; do
