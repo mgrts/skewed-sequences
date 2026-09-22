@@ -61,5 +61,6 @@ PARAM_KEYS = frozenset(
         "random_state",
         "residual_scale",
         "compile_mode",
+        "matmul_precision",
     }
 )

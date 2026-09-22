@@ -34,7 +34,8 @@ def train_epoch(
         # Sample-weight so a smaller final batch doesn't skew the epoch loss.
         total_loss += loss.item() * src.size(0)
         n_samples += src.size(0)
-        all_preds.append(output.detach())
+        # .clone(): see evaluate() — required under CUDA-graph replay (reduce-overhead).
+        all_preds.append(output.detach().clone())
         all_targets.append(tgt.detach())
 
     avg_loss = total_loss / n_samples
@@ -63,7 +64,10 @@ def evaluate(
         # Sample-weight so a smaller final batch doesn't skew the epoch loss.
         total_loss += loss.item() * src.size(0)
         n_samples += src.size(0)
-        all_preds.append(output)
+        # .clone(): under torch.compile(mode='reduce-overhead') the forward is replayed as
+        # a CUDA graph whose output buffer is reused by the next replay; holding the raw
+        # output across iterations reads overwritten memory (a hard error). Tiny tensors.
+        all_preds.append(output.detach().clone())
         all_targets.append(tgt)
 
     avg_loss = total_loss / n_samples

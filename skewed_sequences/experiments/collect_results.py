@@ -93,6 +93,7 @@ def collect_experiment_results(
                     "sgt_loss_p": params.get("sgt_loss_p"),
                     "residual_scale": params.get("residual_scale"),
                     "compile_mode": params.get("compile_mode", "none"),
+                    "matmul_precision": params.get("matmul_precision", "highest"),
                 }
                 # All summary keys: best_{split}_{smape,mape,rmse,mae} + persistence
                 # baseline (best_test_naive_*) + best_test_mase.

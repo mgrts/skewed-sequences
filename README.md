@@ -291,6 +291,7 @@ finished runs and their seeds.
 
 ```bash
 SKSEQ_COMPILE=reduce-overhead poetry run skseq experiments run-owid main   # torch.compile + CUDA graphs
+SKSEQ_MATMUL_PRECISION=high poetry run skseq experiments run-owid main     # TF32 matmuls (Ampere/Ada tensor cores)
 SKSEQ_DEVICE=cpu poetry run skseq train main --loss-type mse               # force a device
 ```
 

@@ -95,6 +95,24 @@ def select_device() -> str:
     return "mps" if torch.backends.mps.is_available() else "cpu"
 
 
+def matmul_precision_from_env() -> str:
+    """``SKSEQ_MATMUL_PRECISION`` = ``highest`` (fp32, default) | ``high`` (TF32) | ``medium``.
+
+    Applied through ``torch.set_float32_matmul_precision``. ``high`` lets Ampere/Ada
+    tensor cores run fp32 matmuls with TF32 inputs (10-bit mantissa) and fp32
+    accumulation — several times faster on an L4 for this FFN-heavy model. Logged as
+    the ``matmul_precision`` param so the paper can state it.
+    """
+    raw = os.environ.get("SKSEQ_MATMUL_PRECISION", "").strip().lower()
+    if raw in ("", "highest", "fp32", "0", "false"):
+        return "highest"
+    if raw in ("1", "true", "tf32"):
+        return "high"
+    if raw not in ("high", "medium"):
+        raise ValueError(f"SKSEQ_MATMUL_PRECISION must be highest|high|medium, got {raw!r}")
+    return raw
+
+
 def compile_mode_from_env() -> str:
     """``SKSEQ_COMPILE`` = ``1``/``default`` | ``reduce-overhead`` | ``max-autotune`` | unset.
 
@@ -160,8 +178,12 @@ def main(
     set_seed(seed)
     device = torch.device(select_device())
     compile_mode = compile_mode_from_env()
+    matmul_precision = matmul_precision_from_env()
+    torch.set_float32_matmul_precision(matmul_precision)
 
-    logger.info(f"Using device: {device} (compile: {compile_mode})")
+    logger.info(
+        f"Using device: {device} (compile: {compile_mode}, matmul precision: {matmul_precision})"
+    )
     logger.info("Loading data...")
 
     data = np.load(dataset_path)
@@ -249,6 +271,7 @@ def main(
                 "random_state": seed,
                 "residual_scale": residual_scale,
                 "compile_mode": compile_mode,
+                "matmul_precision": matmul_precision,
             }
         )
 

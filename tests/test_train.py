@@ -102,3 +102,16 @@ def test_maybe_compile_forward_keeps_state_dict_and_infer(monkeypatch):
     assert model.forward is sentinel  # instance attribute overrides the class method
     assert list(model.state_dict()) == keys_before
     assert model.infer == infer_before
+
+
+def test_matmul_precision_from_env(monkeypatch):
+    from skewed_sequences.modeling.train import matmul_precision_from_env
+
+    monkeypatch.delenv("SKSEQ_MATMUL_PRECISION", raising=False)
+    assert matmul_precision_from_env() == "highest"
+    for raw, expected in [("high", "high"), ("tf32", "high"), ("1", "high"), ("medium", "medium")]:
+        monkeypatch.setenv("SKSEQ_MATMUL_PRECISION", raw)
+        assert matmul_precision_from_env() == expected
+    monkeypatch.setenv("SKSEQ_MATMUL_PRECISION", "bogus")
+    with pytest.raises(ValueError):
+        matmul_precision_from_env()

@@ -243,6 +243,12 @@ Make targets: `make test` (pytest) · `make lint` (flake8 + isort --check + blac
   errors fall back to eager). Logged as the `compile_mode` param (in `PARAM_KEYS`).
   `SKSEQ_DEVICE=cpu|cuda|mps` overrides device selection. Inductor needs `setuptools`
   (a Python 3.12 venv does not ship it) — it is a declared dependency.
+  `default` compile gave no gain on the L4 (the GPU is bandwidth-bound on the 2048-wide FFN
+  activations in fp32), so the effective levers are `SKSEQ_COMPILE=reduce-overhead` (CUDA
+  graphs; `train_epoch`/`evaluate` **must** `.clone()` each batch output because graph
+  replay reuses the output buffer) and `SKSEQ_MATMUL_PRECISION=high` (TF32 matmuls, fp32
+  accumulation; logged as `matmul_precision`, default `highest`). State both in the paper's
+  implementation details if used.
   `scripts/status_parallel.sh --merge` runs `collect-results` over every store (adds a
   `store` column). One process per root — two RVR series in one root would clobber
   `rvr_us_data.npy`.
