@@ -290,19 +290,17 @@ finished runs and their seeds.
 ### Parallel slots on one GPU
 
 ```bash
-bash scripts/launch_parallel.sh     # OWID + both RVR series as 6 processes
-bash scripts/status_parallel.sh     # progress per slot + GPU utilisation
+PARTS=5 bash scripts/launch_parallel.sh   # OWID + both RVR series, up to 1 + 3*PARTS processes
+bash scripts/status_parallel.sh           # progress per slot + GPU utilisation
+bash scripts/status_parallel.sh --merge   # collect-results over every store when done
 ```
 
-Each slot sets `SKSEQ_PROJ_ROOT` to its own directory (own `mlruns.db`, `data/`,
-`reports/`) and shares the code and virtualenv. `run-rvr` takes `--time-series`
-(repeatable) to run one series per process. Merge the stores afterwards:
-
-```bash
-poetry run skseq experiments collect-results main \
-  --tracking-uri sqlite:///$HOME/skewed-sequences/mlruns.db \
-  --tracking-uri sqlite:///$HOME/sweep_slots/owid_b/mlruns.db   # ... one per slot
-```
+The launcher keeps whatever a dataset already has in the main `mlruns.db` there (one
+sequential resuming process) and cuts the remaining run indices into `PARTS` range
+slots, each with its own `SKSEQ_PROJ_ROOT` (own `mlruns.db`, `data/`, `reports/`) and
+the shared code and virtualenv. Re-run it to resume dead slots; it refuses a different
+`PARTS` once slots exist. `run-rvr --time-series` (repeatable) runs one series per
+process.
 
 ## Docker
 

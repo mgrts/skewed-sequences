@@ -1,71 +1,147 @@
 #!/usr/bin/env bash
 #
-# Run the real-data sweeps as several processes on ONE GPU host.
+# Run the real-data sweeps as MANY processes on one GPU host, without training
+# anything twice.
 #
-#     bash scripts/launch_parallel.sh            # launch (idempotent: skips slots already running)
-#     bash scripts/status_parallel.sh            # progress of every slot
+#     bash scripts/launch_parallel.sh                 # launch (idempotent; re-run to resume dead slots)
+#     PARTS=10 bash scripts/launch_parallel.sh        # more slots per dataset (default 5)
+#     bash scripts/status_parallel.sh                 # progress per slot + GPU
 #
-# The model is tiny, so one training process leaves the GPU and the 32 CPUs mostly
-# idle. Each slot below is an independent process with its own SKSEQ_PROJ_ROOT
-# (own mlruns.db, data/processed, sweep log) using the SAME code + virtualenv, so
-# there is no clone to keep in sync and no SQLite write contention. The seeds of
-# one dataset are split by run index (--first-run), which never breaks seed
-# pairing (pairing is within a run index). Every slot runs with --resume, so a
-# killed slot is just re-launched with this same script.
+# How the work is split
+#   For each dataset (owid, rvr_bed, rvr_flu) the script looks into the MAIN store
+#   (${MAIN_ROOT}/mlruns.db) for the highest run index that already has runs there —
+#   whatever the serial sweep or an earlier launch produced. Those run indices stay in
+#   the main store and are resumed by ONE sequential "main" process (finished runs are
+#   skipped, a half-done run is completed). The remaining run indices are cut into
+#   PARTS contiguous ranges, each trained by its own process in its own root under
+#   ${WORK_BASE} (own mlruns.db, data/, log; same code + venv via SKSEQ_PROJ_ROOT).
+#   A run index therefore lives in exactly one store, so seed pairing (which is within
+#   a run index) is never broken and no two processes write one SQLite file.
 #
-# Slot A stays in the main repo (its mlruns.db already holds the finished synthetic,
-# head, lambda and OWID runs); the others live under ${WORK_BASE}. Merge at the end:
+#   Slot roots encode their range (owid_r3-4). Re-running the script with the same
+#   PARTS resumes them; with a different PARTS it refuses, because re-cutting ranges
+#   that already started would duplicate run indices across stores.
 #
-#     skseq experiments collect-results main \
-#         --tracking-uri sqlite:///$HOME/skewed-sequences/mlruns.db \
-#         --tracking-uri sqlite:///$HOME/sweep_slots/owid_b/mlruns.db  ...   (one per slot)
+# Sizing: total processes = 1 + 3*PARTS at most. Each needs ~0.6-1 GB of GPU memory
+# and one CPU thread (OMP_NUM_THREADS is set from the core count). PARTS=10 gives one
+# run index (36 trainings) per slot.
+#
+# Merge when everything is done:
+#     bash scripts/status_parallel.sh --merge     # collect-results over every store
 #
 set -uo pipefail
 
 REPO="${REPO:-$HOME/skewed-sequences}"
+MAIN_ROOT="${MAIN_ROOT:-$REPO}"
 WORK_BASE="${WORK_BASE:-$HOME/sweep_slots}"
 N_RUNS="${N_RUNS:-10}"
-SPLIT="${SPLIT:-5}"                 # runs 1..SPLIT in slot "a", SPLIT+1..N_RUNS in slot "b"
-export MPLBACKEND=Agg OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}" MKL_NUM_THREADS="${MKL_NUM_THREADS:-4}"
+PARTS="${PARTS:-5}"
+EXTRA="${EXTRA:-}"                       # extra runner flags, e.g. "--num-epochs 1" for a smoke test
+DATASETS="${DATASETS:-owid rvr_bed rvr_flu}"
+export MPLBACKEND=Agg
 
 BED="average_inpatient_beds_occupied"
 FLU="total_admissions_all_influenza_confirmed_past_7days"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
-
-# slot name | project root | runner command (without the common flags)
-SLOTS=(
-  "owid_a|${REPO}|run-owid main --n-runs ${N_RUNS}"
-  "owid_b|${WORK_BASE}/owid_b|run-owid main --n-runs ${N_RUNS} --first-run $((SPLIT + 1))"
-  "rvr_bed_a|${WORK_BASE}/rvr_bed_a|run-rvr main --n-runs ${SPLIT} --time-series ${BED}"
-  "rvr_bed_b|${WORK_BASE}/rvr_bed_b|run-rvr main --n-runs ${N_RUNS} --first-run $((SPLIT + 1)) --time-series ${BED}"
-  "rvr_flu_a|${WORK_BASE}/rvr_flu_a|run-rvr main --n-runs ${SPLIT} --time-series ${FLU}"
-  "rvr_flu_b|${WORK_BASE}/rvr_flu_b|run-rvr main --n-runs ${N_RUNS} --first-run $((SPLIT + 1)) --time-series ${FLU}"
-)
-# slot owid_a covers runs 1..N_RUNS but with --resume it skips what the main sweep already
-# finished; owid_b starts at SPLIT+1. Give owid_a an explicit end so they don't overlap:
-SLOTS[0]="owid_a|${REPO}|run-owid main --n-runs ${SPLIT}"
+SETSID=$(command -v setsid >/dev/null 2>&1 && echo setsid || echo "")
 
 cd "${REPO}" || exit 1
 mkdir -p "${WORK_BASE}"
 
-for slot in "${SLOTS[@]}"; do
-  IFS='|' read -r name root cmd <<< "${slot}"
-  logfile="${root}/sweep_${name}.log"
-  if pgrep -f "sweep-slot=${name}" >/dev/null 2>&1; then
-    log "${name}: already running — skipped"
-    continue
-  fi
-  mkdir -p "${root}/data/processed" "${root}/data/external" "${root}/data/raw" "${root}/reports"
-  # Each slot needs the inputs its runner reads: OWID reads the processed .npy, RVR
-  # regenerates its .npy from the raw CSV (per series, hence one root per series).
+# ---- refuse to mix with the old fixed 2-way layout (owid_b, rvr_bed_a, ...) --------
+old=$(ls -d "${WORK_BASE}"/{owid_a,owid_b,rvr_bed_a,rvr_bed_b,rvr_flu_a,rvr_flu_b} 2>/dev/null || true)
+if [ -n "${old}" ] && [ "${IGNORE_OLD_LAYOUT:-0}" != "1" ]; then
+  log "found slots from the old 2-way layout:"; echo "${old}"
+  log "let them finish (status_parallel.sh) or move them away; set IGNORE_OLD_LAYOUT=1 to proceed anyway"
+  exit 1
+fi
+
+# ---- per-dataset runner + experiment prefix -----------------------------------------
+runner_for() {
+  case "$1" in
+    owid)    echo "run-owid main" ;;
+    rvr_bed) echo "run-rvr main --time-series ${BED}" ;;
+    rvr_flu) echo "run-rvr main --time-series ${FLU}" ;;
+    *) echo "unknown dataset $1" >&2; exit 1 ;;
+  esac
+}
+prefix_for() {
+  case "$1" in
+    owid) echo "covid-owid" ;; rvr_bed) echo "rvr-us-bed-occupancy" ;; rvr_flu) echo "rvr-us-influenza-cases" ;;
+  esac
+}
+# highest run index with at least one run in a store (0 if none / no store)
+max_run_in_store() {
+  local store="$1" prefix="$2"
+  [ -f "${store}" ] || { echo 0; return; }
+  poetry run python - "${store}" "${prefix}" <<'PY' 2>/dev/null
+import re, sqlite3, sys
+db, prefix = sys.argv[1], sys.argv[2]
+con = sqlite3.connect(db)
+rows = con.execute(
+    "select e.name from experiments e where e.name like ? and exists "
+    "(select 1 from runs r where r.experiment_id = e.experiment_id)", (prefix + "_run_%",)
+).fetchall()
+idx = [int(m.group(1)) for (n,) in rows for m in [re.search(r"_run_(\d+)$", n)] if m]
+print(max(idx) if idx else 0)
+PY
+}
+alive() { local pf="$1"; [ -f "${pf}" ] && kill -0 "$(cat "${pf}")" 2>/dev/null; }
+
+launch() {  # name root cmd
+  local name="$1" root="$2" cmd="$3" pf="$2/slot.pid" logfile="$2/sweep_$1.log"
+  if alive "${pf}"; then log "${name}: already running — skipped"; return; fi
+  mkdir -p "${root}/data/processed" "${root}/data/external" "${root}/reports"
   [ -f "${root}/data/processed/dataset.npy" ] || cp "${REPO}/data/processed/dataset.npy" "${root}/data/processed/" 2>/dev/null
   [ -f "${root}/data/external/rvr_us_hospitalization_daily.csv" ] || cp "${REPO}/data/external/rvr_us_hospitalization_daily.csv" "${root}/data/external/" 2>/dev/null
-  log "${name}: launching in ${root}  (skseq experiments ${cmd})"
-  # The 'sweep-slot=<name>' token is only there so pgrep can find the process by slot.
-  SKSEQ_PROJ_ROOT="${root}" setsid nohup bash -c "exec -a 'sweep-slot=${name}' poetry run skseq experiments ${cmd} --resume" \
-    >> "${logfile}" 2>&1 < /dev/null &
-  sleep 2
+  log "${name}: launching  (${cmd})"
+  # setsid detaches the slot from this shell AND from a notebook kernel (Linux); macOS
+  # has no setsid, so fall back to plain nohup there (local smoke tests only).
+  SKSEQ_PROJ_ROOT="${root}" OMP_NUM_THREADS="${THREADS}" MKL_NUM_THREADS="${THREADS}" \
+    ${SETSID} nohup bash -c "echo \$\$ > '${pf}'; ${cmd}; echo \"SLOT EXIT=\$?\"" >> "${logfile}" 2>&1 < /dev/null &
+  sleep 1
+}
+
+# ---- plan --------------------------------------------------------------------------
+declare -a MAIN_CMDS=() SLOT_NAMES=() SLOT_ROOTS=() SLOT_CMDS=()
+for ds in ${DATASETS}; do
+  runner=$(runner_for "${ds}"); prefix=$(prefix_for "${ds}")
+  done_upto=$(max_run_in_store "${MAIN_ROOT}/mlruns.db" "${prefix}")
+  [ "${done_upto}" -gt "${N_RUNS}" ] && done_upto="${N_RUNS}"
+  if [ "${done_upto}" -ge 1 ]; then
+    MAIN_CMDS+=("poetry run skseq experiments ${runner} --n-runs ${done_upto} --resume ${EXTRA}")
+  fi
+  remaining=$((N_RUNS - done_upto))
+  [ "${remaining}" -le 0 ] && { log "${ds}: runs 1-${done_upto} in the main store; nothing to split"; continue; }
+  parts=$(( PARTS < remaining ? PARTS : remaining ))
+  chunk=$(( (remaining + parts - 1) / parts ))
+  a=$((done_upto + 1))
+  while [ "${a}" -le "${N_RUNS}" ]; do
+    b=$(( a + chunk - 1 )); [ "${b}" -gt "${N_RUNS}" ] && b="${N_RUNS}"
+    name="${ds}_r${a}-${b}"
+    # a different cut of the same dataset already on disk -> refuse
+    other=$(ls -d "${WORK_BASE}/${ds}_r"* 2>/dev/null | grep -v "/${name}$" || true)
+    if [ -n "${other}" ] && ! ls -d "${WORK_BASE}/${name}" >/dev/null 2>&1; then
+      log "${ds}: existing slots use a different split (${other//$'\n'/ }); keep the same PARTS or move them away"; exit 1
+    fi
+    SLOT_NAMES+=("${name}"); SLOT_ROOTS+=("${WORK_BASE}/${name}")
+    SLOT_CMDS+=("poetry run skseq experiments ${runner} --first-run ${a} --n-runs ${b} --resume ${EXTRA}")
+    a=$((b + 1))
+  done
 done
 
-log "done. status: bash scripts/status_parallel.sh"
+total=$(( ${#SLOT_NAMES[@]} + (${#MAIN_CMDS[@]} > 0 ? 1 : 0) ))
+cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 8)
+THREADS=$(( cores / (total > 0 ? total : 1) )); [ "${THREADS}" -lt 1 ] && THREADS=1
+log "plan: ${total} processes (${#SLOT_NAMES[@]} slots + $(( ${#MAIN_CMDS[@]} > 0 ? 1 : 0 )) main), ${THREADS} CPU thread(s) each, PARTS=${PARTS}, N_RUNS=${N_RUNS}"
+
+# ---- launch ------------------------------------------------------------------------
+if [ "${#MAIN_CMDS[@]}" -gt 0 ]; then
+  chain=$(printf '%s; ' "${MAIN_CMDS[@]}")
+  launch "main" "${MAIN_ROOT}" "${chain}"
+fi
+for i in "${!SLOT_NAMES[@]}"; do
+  launch "${SLOT_NAMES[$i]}" "${SLOT_ROOTS[$i]}" "${SLOT_CMDS[$i]}"
+done
+log "launched. progress: bash scripts/status_parallel.sh"
