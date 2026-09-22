@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "skewed-sequences"
-version = "1.2.10"
+version = "1.2.11"
 description = "Skewed sequences loss function analysis for transformer neural networks"
 authors = ["Mikhail Gritskikh"]
 readme = "README.md"
@@ -34,6 +34,7 @@ typer = {version = ">=0.9", extras = ["all"]}
 
 # Explicit source (used only by packages that reference it, e.g. torch on Linux);
 # PyPI stays the default for everything else.
+setuptools = ">=68"
 [[tool.poetry.source]]
 name = "pytorch-cu124"
 url = "https://download.pytorch.org/whl/cu124"

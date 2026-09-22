@@ -287,6 +287,18 @@ Every runner is called with `--resume`, so a killed sweep is simply re-launched
 with the same command. Never delete `mlruns.db` between launches — it holds the
 finished runs and their seeds.
 
+### Faster single-process training
+
+```bash
+SKSEQ_COMPILE=reduce-overhead poetry run skseq experiments run-owid main   # torch.compile + CUDA graphs
+SKSEQ_DEVICE=cpu poetry run skseq train main --loss-type mse               # force a device
+```
+
+The model is small enough that a GPU spends most of each batch launching tiny kernels;
+`torch.compile` fuses them (`1`/`default`) or replays them as CUDA graphs
+(`reduce-overhead`). Only the training `forward` is compiled; checkpoints and `infer` are
+unchanged, and the mode is logged as the `compile_mode` MLflow param.
+
 ### Parallel slots on one GPU
 
 ```bash

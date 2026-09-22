@@ -60,5 +60,6 @@ PARAM_KEYS = frozenset(
         "exp_transform",
         "random_state",
         "residual_scale",
+        "compile_mode",
     }
 )

@@ -234,6 +234,15 @@ Make targets: `make test` (pytest) · `make lint` (flake8 + isort --check + blac
   (`source scripts/mps.sh start` in the launching shell); without it they time-slice and
   tiny kernels run far slower than serially. Liveness is by `slot.pid` + a
   `SLOT EXIT=<code>` log marker.
+- **Multi-process on the pod's L4 does not work for this model** (measured 2026-09-22):
+  18 time-sliced processes and 3 MPS clients both produced zero epochs while one process
+  does an OWID epoch in 11 s — the per-batch time is kernel-launch latency, which only one
+  process at a time can hide. The lever is inside the process: `SKSEQ_COMPILE=1` (or
+  `reduce-overhead` for CUDA graphs) compiles the teacher-forced `forward` only (bound
+  method assigned on the instance, so `state_dict` keys and `infer` are untouched; dynamo
+  errors fall back to eager). Logged as the `compile_mode` param (in `PARAM_KEYS`).
+  `SKSEQ_DEVICE=cpu|cuda|mps` overrides device selection. Inductor needs `setuptools`
+  (a Python 3.12 venv does not ship it) — it is a declared dependency.
   `scripts/status_parallel.sh --merge` runs `collect-results` over every store (adds a
   `store` column). One process per root — two RVR series in one root would clobber
   `rvr_us_data.npy`.

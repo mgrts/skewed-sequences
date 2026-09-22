@@ -54,3 +54,51 @@ def test_sgt_sigma_scales_with_residual_scale():
 def test_charbonnier_scales_with_residual_scale():
     fn = get_loss_function("charbonnier", residual_scale=2.0)
     assert fn.eps == pytest.approx(1.345 * 2.0)
+
+
+def test_select_device_env_override(monkeypatch):
+    from skewed_sequences.modeling.train import select_device
+
+    monkeypatch.setenv("SKSEQ_DEVICE", "cpu")
+    assert select_device() == "cpu"
+    monkeypatch.delenv("SKSEQ_DEVICE")
+    assert select_device() in {"cpu", "cuda", "mps"}
+
+
+def test_compile_mode_from_env(monkeypatch):
+    from skewed_sequences.modeling.train import compile_mode_from_env
+
+    monkeypatch.delenv("SKSEQ_COMPILE", raising=False)
+    assert compile_mode_from_env() == "none"
+    for raw, expected in [
+        ("1", "default"),
+        ("default", "default"),
+        ("reduce-overhead", "reduce-overhead"),
+        ("0", "none"),
+    ]:
+        monkeypatch.setenv("SKSEQ_COMPILE", raw)
+        assert compile_mode_from_env() == expected
+
+
+def test_maybe_compile_forward_keeps_state_dict_and_infer(monkeypatch):
+    """Compiling the bound forward must not rename checkpoint keys or touch ``infer``."""
+    from unittest.mock import patch
+
+    from skewed_sequences.modeling.models import TransformerWithPE
+    from skewed_sequences.modeling.train import maybe_compile_forward
+
+    model = TransformerWithPE(in_dim=1, out_dim=1, embed_dim=8, num_heads=2, num_layers=1)
+    keys_before = list(model.state_dict())
+    infer_before = model.infer
+    sentinel = object()
+    with patch(
+        "skewed_sequences.modeling.train.torch.compile", return_value=sentinel
+    ) as mock_compile:
+        assert maybe_compile_forward(model, "none") is model
+        mock_compile.assert_not_called()
+        maybe_compile_forward(model, "reduce-overhead")
+        mock_compile.assert_called_once()
+        assert mock_compile.call_args.kwargs == {"mode": "reduce-overhead"}
+    assert model.forward is sentinel  # instance attribute overrides the class method
+    assert list(model.state_dict()) == keys_before
+    assert model.infer == infer_before

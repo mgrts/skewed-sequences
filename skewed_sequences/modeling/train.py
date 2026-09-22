@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import tempfile
 
@@ -84,6 +85,51 @@ def get_loss_function(
         raise ValueError(f"Unsupported loss type: {loss_type}")
 
 
+def select_device() -> str:
+    """``SKSEQ_DEVICE`` (cpu | cuda | mps) overrides the automatic cuda > mps > cpu choice."""
+    forced = os.environ.get("SKSEQ_DEVICE", "").strip().lower()
+    if forced:
+        return forced
+    if torch.cuda.is_available():
+        return "cuda"
+    return "mps" if torch.backends.mps.is_available() else "cpu"
+
+
+def compile_mode_from_env() -> str:
+    """``SKSEQ_COMPILE`` = ``1``/``default`` | ``reduce-overhead`` | ``max-autotune`` | unset.
+
+    Returns ``"none"`` when unset, so the logged param is always present.
+    """
+    raw = os.environ.get("SKSEQ_COMPILE", "").strip().lower()
+    if raw in ("", "0", "false", "none"):
+        return "none"
+    return "default" if raw in ("1", "true", "default") else raw
+
+
+def maybe_compile_forward(model: torch.nn.Module, compile_mode: str) -> torch.nn.Module:
+    """Compile ONLY the teacher-forced ``forward`` used in training (opt-in).
+
+    The model is a ~2M-parameter transformer whose per-batch time is dominated by
+    the launch latency of thousands of tiny CUDA kernels, so one process cannot
+    fill the GPU and several processes cannot share it (time-slicing and MPS both
+    proved worse than serial on the L4). ``torch.compile`` fuses those kernels;
+    ``reduce-overhead`` additionally replays them as CUDA graphs. Compiling the
+    bound ``forward`` and assigning it on the instance keeps ``state_dict`` keys and
+    checkpoints unchanged and leaves the autoregressive ``infer`` path eager. Dynamo
+    errors fall back to eager (``suppress_errors``), so a failing compile costs
+    speed, never correctness. The mode is logged as the ``compile_mode`` param.
+    """
+    if compile_mode == "none":
+        return model
+    import torch._dynamo
+
+    torch._dynamo.config.suppress_errors = True
+    kwargs = {} if compile_mode == "default" else {"mode": compile_mode}
+    model.forward = torch.compile(model.forward, **kwargs)
+    logger.info(f"torch.compile enabled on model.forward (mode={compile_mode})")
+    return model
+
+
 @app.command()
 def main(
     dataset_path: Path = PROCESSED_DATA_DIR / "synthetic_dataset.npy",
@@ -112,13 +158,10 @@ def main(
     min_split_sequences: int = 5,
 ):
     set_seed(seed)
-    device = torch.device(
-        "cuda"
-        if torch.cuda.is_available()
-        else "mps" if torch.backends.mps.is_available() else "cpu"
-    )
+    device = torch.device(select_device())
+    compile_mode = compile_mode_from_env()
 
-    logger.info(f"Using device: {device}")
+    logger.info(f"Using device: {device} (compile: {compile_mode})")
     logger.info("Loading data...")
 
     data = np.load(dataset_path)
@@ -164,6 +207,8 @@ def main(
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
+    maybe_compile_forward(model, compile_mode)
+
     criterion = get_loss_function(
         loss_type,
         sgt_loss_lambda=sgt_loss_lambda,
@@ -203,6 +248,7 @@ def main(
                 "exp_transform": exp_transform,
                 "random_state": seed,
                 "residual_scale": residual_scale,
+                "compile_mode": compile_mode,
             }
         )
 
