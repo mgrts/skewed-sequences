@@ -95,7 +95,16 @@ idx = [int(m.group(1)) for (n,) in rows for m in [re.search(r"_run_(\d+)$", n)] 
 print(max(idx) if idx else 0)
 PY
 }
-alive() { local pf="$1"; [ -f "${pf}" ] && kill -0 "$(cat "${pf}")" 2>/dev/null; }
+# A slot is alive only if its pidfile names a process that still exists AND is one of
+# ours (skseq / poetry / bash wrapper). After a VM reboot the old PID can belong to an
+# unrelated process; treating that as alive would silently skip the slot forever.
+alive() {
+  local pf="$1" pid
+  [ -f "${pf}" ] || return 1
+  pid=$(cat "${pf}" 2>/dev/null); [ -n "${pid}" ] || return 1
+  kill -0 "${pid}" 2>/dev/null || return 1
+  ps -o args= -p "${pid}" 2>/dev/null | grep -qE 'skseq|poetry|run-(owid|rvr|synthetic|head-sweep|lambda-sweep)'
+}
 
 n_alive() {
   local n=0 pf
