@@ -15,13 +15,26 @@ app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
 def create_boxplot(data_dict: dict, output_path: Path, title: str, xlim: int):
-    plt.figure(figsize=(15, 9))
-    sns.boxplot(data=list(data_dict.values()), orient="h", palette=PALETTE_SEQ)
+    # Sized for a single journal column (3.35 in) at 300 dpi with >= 8 pt type, so the
+    # figure is legible at print size without scaling (reviewers A9 / B7).
+    from skewed_sequences.visualization.results_figures import _style
+
+    _style()
+    plt.figure(figsize=(3.35, 0.45 * len(data_dict) + 0.9))
+    sns.boxplot(
+        data=list(data_dict.values()),
+        orient="h",
+        palette=PALETTE_SEQ[: len(data_dict)],
+        width=0.6,
+        linewidth=0.8,
+        fliersize=1.2,
+    )
 
     plt.yticks(ticks=range(len(data_dict)), labels=list(data_dict.keys()))
-    plt.title(title)
-    plt.xlabel("Values")
-    plt.ylabel("Distribution")
+    if title:
+        plt.title(title, loc="left")
+    plt.xlabel("Standardized value")
+    plt.ylabel("")
     sns.despine(trim=True)
 
     plt.xticks(ticks=np.arange(-xlim, xlim + 1, 1))
@@ -48,7 +61,12 @@ def synthetic(
 
     dataset_params = copy.deepcopy(SYNTHETIC_DATA_CONFIGS)
     for i, params in enumerate(dataset_params):
-        params["label"] = f"Dataset {i + 1}: {params['experiment_name']}"
+        params["label"] = {
+            "normal": "Gaussian",
+            "heavy-tailed": "Heavy-tailed",
+            "normal-skewed": "Gaussian, skewed",
+            "heavy-tailed-skewed": "Heavy-tailed, skewed",
+        }.get(params["experiment_name"], params["experiment_name"])
 
     datasets = {}
 
@@ -67,7 +85,7 @@ def synthetic(
         datasets[params["label"]] = data
         logger.info(f'Generated dataset: {params["label"]}')
 
-    create_boxplot(datasets, output_path, "Comparison of Generated Datasets", xlim)
+    create_boxplot(datasets, output_path, "", xlim)
 
 
 @app.command()
@@ -79,12 +97,12 @@ def real(
     logger.info("Creating real-world datasets and generating boxplots...")
 
     dataset_specs = [
-        {"label": "RVR - Bed Occupancy", "time_series": "average_inpatient_beds_occupied"},
+        {"label": "RVR bed occupancy", "time_series": "average_inpatient_beds_occupied"},
         {
-            "label": "RVR - Influenza Cases",
+            "label": "RVR influenza admissions",
             "time_series": "total_admissions_all_influenza_confirmed_past_7days",
         },
-        {"label": "OWID - COVID Cases", "path": PROCESSED_DATA_DIR / "dataset.npy"},
+        {"label": "OWID COVID-19 cases", "path": PROCESSED_DATA_DIR / "dataset.npy"},
     ]
 
     datasets = {}
@@ -107,7 +125,7 @@ def real(
             except Exception as e:
                 logger.warning(f"Failed to load {label}: {e}")
 
-    create_boxplot(datasets, output_path, "Comparison of Real-World Datasets", xlim)
+    create_boxplot(datasets, output_path, "", xlim)
 
 
 if __name__ == "__main__":
