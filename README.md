@@ -223,6 +223,15 @@ Run `poetry run skseq train main --help` for the full list of options including
 `--loss-type`, `--sgt-loss-lambda`, `--sgt-loss-q`, `--sgt-loss-sigma`, and
 `--output-length`.
 
+### `skseq figures`
+
+```bash
+poetry run skseq figures all --input-path reports/experiment_results.csv
+```
+
+Result figures (per-loss means with 95 % CIs, the SGT p × q landscape, the skew-parameter
+effect, the multi-head study) and the results / summary / λ tables, from the collected CSV.
+
 ### `skseq visualize`
 
 | Sub-command | Description |

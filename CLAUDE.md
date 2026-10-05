@@ -44,7 +44,11 @@ Everything is driven through a single `skseq` Typer CLI.
     (`metrics.sgt_increment_fit`), the reviewer-A3/A11 parameter-guidance tool →
     `reports/increment_sgt_fit.csv`.
 - `skewed_sequences/visualization/` — `style.py`, `predictions.py`, `plots.py`,
-  `visualize_data.py`, `visualize_losses.py` (NumPy reimplementation of the SGT loss).
+  `visualize_data.py`, `visualize_losses.py` (NumPy reimplementation of the SGT loss),
+  `results_figures.py` (`skseq figures losses|grid|lambda-effect|heads|tables|all`: the
+  revision's result figures and tables from `experiment_results.csv`; column/page widths at
+  300 dpi, ≥ 8 pt type, MASE headline; pre-registered SGT anchors `(2,2.5) (1.5,2.5) (2,20)
+  (1,20)` + best-of-grid; Tukey's off-scale values are clipped and annotated).
 - `skewed_sequences/metrics.py` — skewness / kappa / dispersion / Hill tail-index metrics +
   `fit_sgt` / `sgt_increment_fit` (SGT MLE with `p` and the residual scale fixed as in training).
 - `skewed_sequences/mlflow_contract.py` — single source of the MLflow param/metric key names.
@@ -73,6 +77,7 @@ source scripts/mps.sh start && PARTS=7 MAX_ALIVE=6 bash scripts/launch_parallel.
 bash scripts/status_parallel.sh                                                        # progress per slot; --merge collects every store
 STAGES=owid,rvr,lambda,collect nohup poetry run bash scripts/run_sweep.sh > sweep.log 2>&1 &   # resumable sweep
 skseq visualize-losses main
+skseq figures all --input-path reports/experiment_results.csv   # revision figures + tables
 
 # `visualize` and `plots` have named subcommands (no `main`):
 skseq visualize synthetic        # also: real | variants

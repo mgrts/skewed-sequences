@@ -144,6 +144,12 @@ _register_lazy(
     name="visualize-losses",
     help="Visualize SGT loss interpolation with classical losses.",
 )
+_register_lazy(
+    app,
+    "skewed_sequences.visualization.results_figures",
+    name="figures",
+    help="Publication figures and tables from the collected experiment results.",
+)
 
 # -- Experiments ------------------------------------------------------------
 experiments_app = typer.Typer(name="experiments", help="Run experiment suites.")

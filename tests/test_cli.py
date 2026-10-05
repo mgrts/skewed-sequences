@@ -44,3 +44,10 @@ def test_increment_fit_help():
     result = runner.invoke(app, ["experiments", "increment-fit", "main", "--help"])
     assert result.exit_code == 0
     assert "output-path" in result.output
+
+
+def test_figures_help():
+    result = runner.invoke(app, ["figures", "--help"])
+    assert result.exit_code == 0
+    for cmd in ("losses", "grid", "lambda-effect", "heads", "tables", "all"):
+        assert cmd in result.output
