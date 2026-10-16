@@ -58,7 +58,7 @@ Read the diff plus `modeling/train.py`, `modeling/trainer.py`, `modeling/utils.p
    `random` / MPS / cudnn. Runners draw the seed ONCE per `(run_idx, model_type)` via
    `_runner.draw_experiment_seed` (unseeded `random.randint`, or the seed already logged
    under the experiment name when `resume`) and reuse it across every loss config — this
-   seed pairing is what makes `aggregate_results`' paired Wilcoxon valid. Flag any path
+   seed pairing is what makes `aggregate_results`' seed-paired tests valid (`perm_p` from `stats.signflip_p` is the headline, `wilcoxon_p` is kept, intervals are `ci_low` / `ci_high` from `stats.bootstrap_ci`). Flag any path
    that draws a seed inside the loss loop, any claim of determinism, or any "fix" of
    runner seeds with `set_seed`.
 8. **Resume contract.** `run_training_config(resume=True)` skips a config when

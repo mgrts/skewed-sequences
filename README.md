@@ -75,7 +75,7 @@ LANL earthquakes, RVR US hospitalisations, Health & Fitness wearable data).
 │       ├── calculate_metrics.py
 │       └── calculate_dispersion_scaling.py
 │
-├── tests/                  <- Pytest test suite (242 tests)
+├── tests/                  <- Pytest test suite (281 tests)
 ├── data/                   <- Raw / interim / processed / external data
 ├── models/                 <- Saved model artefacts
 ├── mlruns/                 <- MLflow tracking store
@@ -229,8 +229,13 @@ Run `poetry run skseq train main --help` for the full list of options including
 poetry run skseq figures all --input-path reports/experiment_results.csv
 ```
 
-Result figures (per-loss means with 95 % CIs, the SGT p × q landscape, the skew-parameter
-effect, the multi-head study) and the results / summary / λ tables, from the collected CSV.
+Result figures (the headline anchors-vs-baselines summary, per-loss means with BCa bootstrap
+95 % CIs, the SGT p × q landscape, the skew-parameter effect, the multi-head study, the
+loss/gradient family) and the results / summary / λ / Holm tables, from the collected CSV; as PDF
+and PNG. Every p-value is an exact sign-flip permutation test on the seed-paired differences
+(the paired Wilcoxon p is kept alongside); see `skewed_sequences/stats.py`. `--data-dir <dir>` (with `<dataset>.npy` arrays) adds the dataset cards and
+`--curves-csv <file>` (per-epoch MLflow metrics) adds the Tukey training curves; both are
+also available as `skseq figures datasets` / `skseq figures tukey-curves`.
 
 ### `skseq visualize`
 
@@ -380,7 +385,7 @@ make pre-commit  # Run all pre-commit hooks
 
 ### Testing
 
-The test suite (242 tests) lives in `tests/`:
+The test suite (281 tests) lives in `tests/`:
 
 | Module | What it tests |
 |--------|---------------|

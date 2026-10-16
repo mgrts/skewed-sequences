@@ -3,11 +3,13 @@
 ``collect_results`` emits one row per MLflow run; this command turns those raw
 rows into the numbers a comparison actually needs:
 
-* ``summarize`` — per-config mean/std/median/IQR + a 95% CI half-width over the
-  ``N_RUNS`` replicates (the error bars reviewers A4/B11 asked for).
+* ``summarize`` — per-config mean/std/median/IQR + a BCa bootstrap 95 % interval
+  (``ci_low`` / ``ci_high``) over the ``N_RUNS`` replicates (the error bars reviewers
+  A4/B11 asked for).
 * ``compare_sgt_vs_baselines`` — within each (dataset, model) cell, the best SGT
-  config vs each classical baseline, tested with a **paired Wilcoxon signed-rank**
-  test (B12).
+  config vs each classical baseline, tested with an exact **sign-flip permutation
+  test** on the seed-paired differences (``perm_p``, the headline) and the paired
+  Wilcoxon signed-rank test (``wilcoxon_p``, kept alongside) (B12).
 * ``best_methods`` — one row per (dataset, model): the overall best loss and
   whether the best SGT config beats the best baseline significantly (the B15
   summary table: dataset x best method x significance).
@@ -25,9 +27,9 @@ torch weight init are reproducible from it). The runs are NOT bit-reproducible �
 ``set_seed`` seeds only torch + numpy, not Python ``random`` / MPS / cudnn
 (CLAUDE.md invariant #7) — so reproducibility is only via the logged
 ``random_state``. The shared split + init seed still makes the replicates a
-legitimate matched block, so the paired Wilcoxon signed-rank test (matched on
-``random_state``) is valid and far more sensitive at ``N_RUNS=10`` than an unpaired
-test. The SGT config compared is the best-of-grid, so its advantage is optimistic
+legitimate matched block, so the sign-flip permutation test and the paired Wilcoxon
+test (both matched on ``random_state``) are valid and far more sensitive at
+``N_RUNS=10`` than an unpaired test. Both are distribution-free (``skewed_sequences.stats``). The SGT config compared is the best-of-grid, so its advantage is optimistic
 (winner's curse) — read the p-values as a screen, not a confirmatory result.
 """
 
@@ -39,6 +41,7 @@ from scipy.stats import wilcoxon
 import typer
 
 from skewed_sequences.config import REPORTS_DIR
+from skewed_sequences.stats import bootstrap_ci, signflip_p
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -59,12 +62,9 @@ def _iqr(s: pd.Series) -> float:
     return s.quantile(0.75) - s.quantile(0.25)
 
 
-def _ci95(s: pd.Series) -> float:
-    """Half-width of a normal-approx 95% CI of the mean (``1.96 * std / sqrt(n)``)."""
-    n = s.count()
-    if n < 2:
-        return np.nan
-    return 1.96 * s.std(ddof=1) / np.sqrt(n)
+def _ci(s: pd.Series) -> tuple[float, float]:
+    """BCa bootstrap 95 % interval (low, high) of the mean over the replicates."""
+    return bootstrap_ci(s.to_numpy(dtype=float))
 
 
 def _finished(df: pd.DataFrame) -> pd.DataFrame:
@@ -76,14 +76,15 @@ def _finished(df: pd.DataFrame) -> pd.DataFrame:
 def summarize(df: pd.DataFrame, metric: str) -> pd.DataFrame:
     """Per-config replicate summary of ``metric`` over runs (mean/std/median/IQR/CI)."""
     finished = _finished(df).dropna(subset=[metric])
+    cols = ["n", "mean", "std", "ci_low", "ci_high", "median", "iqr"]
     if finished.empty:
-        return pd.DataFrame(columns=CONFIG_KEYS + ["n", "mean", "std", "ci95", "median", "iqr"])
-    return (
-        finished.groupby(CONFIG_KEYS, dropna=False)[metric]
-        .agg(n="count", mean="mean", std="std", ci95=_ci95, median="median", iqr=_iqr)
-        .reset_index()
-        .sort_values(["dataset", "mean"])
-    )
+        return pd.DataFrame(columns=CONFIG_KEYS + cols)
+    g = finished.groupby(CONFIG_KEYS, dropna=False)[metric]
+    out = g.agg(n="count", mean="mean", std="std", median="median", iqr=_iqr)
+    bounds = g.apply(_ci).reindex(out.index)
+    out["ci_low"] = [b[0] for b in bounds]
+    out["ci_high"] = [b[1] for b in bounds]
+    return out[cols].reset_index().sort_values(["dataset", "mean"])
 
 
 def _best_sgt_config(sgt: pd.DataFrame, metric: str):
@@ -128,8 +129,19 @@ def _wilcoxon_p(a_vals: np.ndarray, b_vals: np.ndarray) -> float:
     return float(p)
 
 
+def _perm_p(a_vals: np.ndarray, b_vals: np.ndarray) -> float:
+    """Exact two-sided sign-flip permutation p on the paired differences (NaN if undefined).
+
+    Same guard as ``_wilcoxon_p``: NaN for fewer than two pairs or for vectors equal up to
+    rounding, so ``significant`` can never flip on float noise.
+    """
+    if len(a_vals) < 2 or np.allclose(a_vals, b_vals):
+        return np.nan
+    return signflip_p(np.asarray(a_vals, dtype=float) - np.asarray(b_vals, dtype=float))
+
+
 def compare_sgt_vs_baselines(df: pd.DataFrame, metric: str) -> pd.DataFrame:
-    """For each dataset, best SGT config vs each baseline (paired Wilcoxon)."""
+    """For each dataset, best SGT config vs each baseline (sign-flip permutation p, Wilcoxon p)."""
     finished = _finished(df).dropna(subset=[metric])
     if finished.empty:
         return pd.DataFrame()
@@ -149,6 +161,7 @@ def compare_sgt_vs_baselines(df: pd.DataFrame, metric: str) -> pd.DataFrame:
         for loss_type, lsub in baselines.groupby("loss_type"):
             sgt_vals, base_vals, n_pairs = _paired_vectors(sgt_best, lsub, metric)
             p = _wilcoxon_p(sgt_vals, base_vals)
+            pp = _perm_p(sgt_vals, base_vals)
             rows.append(
                 {
                     "dataset": dataset,
@@ -165,8 +178,9 @@ def compare_sgt_vs_baselines(df: pd.DataFrame, metric: str) -> pd.DataFrame:
                     "median_diff": (
                         float(np.median(sgt_vals) - np.median(base_vals)) if n_pairs else np.nan
                     ),
+                    "perm_p": pp,
                     "wilcoxon_p": p,
-                    "significant": bool(p < ALPHA) if np.isfinite(p) else False,
+                    "significant": bool(pp < ALPHA) if np.isfinite(pp) else False,
                     "n_pairs": n_pairs,
                 }
             )
@@ -177,8 +191,8 @@ def best_methods(df: pd.DataFrame, metric: str) -> pd.DataFrame:
     """One row per (dataset, model): the B15 summary table.
 
     Reports the overall best loss (lowest mean ``metric``), the best SGT config,
-    the best classical baseline, and the paired-Wilcoxon verdict of SGT vs the
-    best baseline. ``lower metric is better`` throughout.
+    the best classical baseline, and the permutation-test verdict of SGT vs the
+    best baseline (``perm_p``; the Wilcoxon p is reported alongside). ``lower metric is better`` throughout.
     """
     finished = _finished(df).dropna(subset=[metric])
     if finished.empty:
@@ -212,10 +226,11 @@ def best_methods(df: pd.DataFrame, metric: str) -> pd.DataFrame:
             else (np.array([]), np.array([]), 0)
         )
         p = _wilcoxon_p(sgt_vals, base_vals)
+        pp = _perm_p(sgt_vals, base_vals)
         median_diff = float(np.median(sgt_vals) - np.median(base_vals)) if n_pairs else np.nan
-        if not np.isfinite(p):
+        if not np.isfinite(pp):
             verdict = "n/a"
-        elif p >= ALPHA:
+        elif pp >= ALPHA:
             verdict = "tie"
         elif median_diff < 0:
             verdict = "SGT wins"
@@ -235,6 +250,7 @@ def best_methods(df: pd.DataFrame, metric: str) -> pd.DataFrame:
                 "best_baseline": best_base_loss,
                 "baseline_mean": best_base_mean,
                 "median_diff_sgt_minus_baseline": median_diff,
+                "perm_p": pp,
                 "wilcoxon_p": p,
                 "verdict": verdict,
                 "n_pairs": n_pairs,
@@ -249,7 +265,7 @@ def head_sweep_summary(df: pd.DataFrame, metric: str) -> pd.DataFrame:
     Per (loss config, head count): replicate mean/std/95%CI/median of ``metric``,
     plus the **multi-head effect** — the seed-paired difference of each head count
     against the single-head (``num_heads==1``) baseline (negative => multi-head
-    better) with a paired-Wilcoxon p-value. Pairs on the shared per-run
+    better) with the sign-flip permutation p and the paired-Wilcoxon p. Pairs on the shared per-run
     ``random_state`` (head configs are seed-paired within a run).
     """
     finished = _finished(df).dropna(subset=[metric])
@@ -266,19 +282,23 @@ def head_sweep_summary(df: pd.DataFrame, metric: str) -> pd.DataFrame:
         for nh, gh in g.groupby("num_heads"):
             vals = gh[metric]
             if nh == 1 or single.empty:
-                diff, p = np.nan, np.nan
+                diff, p, pp = np.nan, np.nan, np.nan
             else:
                 mh_vals, sg_vals, n_pairs = _paired_vectors(gh, single, metric)
                 diff = float(np.median(mh_vals) - np.median(sg_vals)) if n_pairs else np.nan
                 p = _wilcoxon_p(mh_vals, sg_vals)
+                pp = _perm_p(mh_vals, sg_vals)
             row = dict(zip(HEAD_CONFIG_KEYS, cfg_vals))
+            ci_low, ci_high = _ci(vals)
             row.update(
                 num_heads=int(nh) if pd.notna(nh) else nh,
                 n=int(vals.count()),
                 mean=float(vals.mean()),
-                ci95=float(_ci95(vals)) if vals.count() >= 2 else np.nan,
+                ci_low=ci_low,
+                ci_high=ci_high,
                 median=float(vals.median()),
                 vs_single_head_median_diff=diff,
+                vs_single_head_perm_p=pp,
                 vs_single_head_wilcoxon_p=p,
                 vs_single_head_better=bool(np.isfinite(diff) and diff < 0),
             )
@@ -302,7 +322,7 @@ LAMBDA_GROUP_KEYS = GROUP_KEYS + ["sgt_loss_p", "sgt_loss_q"]
 
 
 def anchor_comparisons(df: pd.DataFrame, metric: str, anchors=ANCHORS) -> pd.DataFrame:
-    """Fixed SGT anchors vs each classical baseline (paired Wilcoxon), per (dataset, model).
+    """Fixed SGT anchors vs each classical baseline (permutation p, Wilcoxon p), per (dataset, model).
 
     Unlike ``compare_sgt_vs_baselines`` no SGT config is *selected* on the data, so
     a significant difference here is confirmatory rather than a screen.
@@ -322,6 +342,7 @@ def anchor_comparisons(df: pd.DataFrame, metric: str, anchors=ANCHORS) -> pd.Dat
             for loss_type, lsub in baselines.groupby("loss_type"):
                 sgt_vals, base_vals, n_pairs = _paired_vectors(sgt_cfg, lsub, metric)
                 p = _wilcoxon_p(sgt_vals, base_vals)
+                pp = _perm_p(sgt_vals, base_vals)
                 rows.append(
                     {
                         "dataset": dataset,
@@ -340,8 +361,9 @@ def anchor_comparisons(df: pd.DataFrame, metric: str, anchors=ANCHORS) -> pd.Dat
                             if n_pairs
                             else np.nan
                         ),
+                        "perm_p": pp,
                         "wilcoxon_p": p,
-                        "significant": bool(p < ALPHA) if np.isfinite(p) else False,
+                        "significant": bool(pp < ALPHA) if np.isfinite(pp) else False,
                         "n_pairs": n_pairs,
                     }
                 )
@@ -368,6 +390,7 @@ def lambda_effect(df: pd.DataFrame, metric: str) -> pd.DataFrame:
         for lam, gl in g[g["sgt_loss_lambda"] != 0.0].groupby("sgt_loss_lambda"):
             skew_vals, sym_vals, n_pairs = _paired_vectors(gl, symmetric, metric)
             p = _wilcoxon_p(skew_vals, sym_vals)
+            pp = _perm_p(skew_vals, sym_vals)
             mean_diff = float(np.mean(skew_vals - sym_vals)) if n_pairs else np.nan
             rows.append(
                 {
@@ -384,8 +407,9 @@ def lambda_effect(df: pd.DataFrame, metric: str) -> pd.DataFrame:
                     "median_diff": (
                         float(np.median(skew_vals) - np.median(sym_vals)) if n_pairs else np.nan
                     ),
+                    "perm_p": pp,
                     "wilcoxon_p": p,
-                    "significant": bool(p < ALPHA) if np.isfinite(p) else False,
+                    "significant": bool(pp < ALPHA) if np.isfinite(pp) else False,
                     "skewed_better": bool(np.isfinite(mean_diff) and mean_diff < 0),
                 }
             )

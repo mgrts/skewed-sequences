@@ -183,3 +183,11 @@ mlruns.db
 .claude/scheduled_tasks.lock
 # Stray MLflow sqlite DB (project tracking lives in mlruns.db, already ignored)
 mlflow.db
+
+# reviewed article, manuscript source, sweep copies, Zenodo deposit: untracked by decision (2026-09-12), ignored since 2026-10-16
+references/
+
+# Codex mirrors of CLAUDE.md and .claude/ (not tracked for now)
+AGENTS.md
+.agents/
+.codex/

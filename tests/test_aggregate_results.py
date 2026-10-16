@@ -47,9 +47,10 @@ def _df():
 def test_summarize_groups_by_config():
     g = summarize(_df(), "best_test_rmse")
     assert len(g) == 4  # 2 SGT configs + 2 baselines
-    assert {"dataset", "loss_type", "n", "mean", "std", "ci95", "median", "iqr"} <= set(g.columns)
+    expected = {"dataset", "loss_type", "n", "mean", "std", "ci_low", "ci_high", "median", "iqr"}
+    assert expected <= set(g.columns)
     assert (g["n"] == N_RUNS).all()
-    assert (g["ci95"] > 0).all()
+    assert (g["ci_low"] < g["mean"]).all() and (g["ci_high"] > g["mean"]).all()
 
 
 def test_summarize_filters_unfinished():
@@ -66,8 +67,10 @@ def test_compare_picks_best_sgt_and_pairs_vs_baselines():
     assert (c["sgt_q"] == 10.0).all()  # best-of-grid SGT selected
     assert (c["median_diff"] < 0).all()  # SGT better than both baselines here
     assert (c["n_pairs"] == N_RUNS).all()
-    # Consistent paired differences -> significant two-sided Wilcoxon at n=10.
+    # Consistent paired differences -> significant two-sided Wilcoxon at n=10, and the
+    # exact sign-flip permutation p sits at its floor of 2 / 2**10.
     assert (c["wilcoxon_p"] < 0.05).all()
+    assert c["perm_p"].to_numpy() == pytest.approx(2 / 2**N_RUNS)
     assert c["significant"].all()
 
 
@@ -138,6 +141,8 @@ def test_head_sweep_summary_multihead_effect():
     assert row4["vs_single_head_median_diff"] < 0  # 4-head better than 1-head
     assert bool(row4["vs_single_head_better"]) is True
     assert row4["vs_single_head_wilcoxon_p"] < 0.05
+    assert row4["vs_single_head_perm_p"] == pytest.approx(2 / 2**N_RUNS)
+    assert row4["ci_low"] < row4["mean"] < row4["ci_high"]
     row1 = h[h["num_heads"] == 1].iloc[0]
     assert pd.isna(row1["vs_single_head_median_diff"])  # single-head is the baseline
 

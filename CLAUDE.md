@@ -37,24 +37,31 @@ Everything is driven through a single `skseq` Typer CLI.
     plus the **resume** helpers `draw_experiment_seed` (reuse the seed already logged under an
     experiment) and `has_finished_run` (skip a config that already has a FINISHED run).
   - `collect_results.py` — reads MLflow back into `reports/experiment_results.csv`.
-  - `aggregate_results.py` — replicate summary stats (mean/std/95%CI/median/IQR) + SGT-vs-baseline
-    **paired Wilcoxon signed-rank** + a `best_methods` table into `reports/experiment_summary{,_comparisons,_best_methods}.csv`.
+  - `aggregate_results.py` — replicate summary stats (mean/std/BCa bootstrap 95 % CI/median/IQR) + SGT-vs-baseline
+    **exact sign-flip permutation test** (`perm_p`, the headline) with the paired Wilcoxon p alongside (`wilcoxon_p`)
+    + a `best_methods` table into `reports/experiment_summary{,_comparisons,_best_methods}.csv`.
   - `calculate_metrics.py`, `calculate_dispersion_scaling.py` — analysis scripts.
   - `increment_fit.py` (`increment-fit`) — MLE of SGT (λ, q) on each dataset's one-step increments
     (`metrics.sgt_increment_fit`), the reviewer-A3/A11 parameter-guidance tool →
     `reports/increment_sgt_fit.csv`.
 - `skewed_sequences/visualization/` — `style.py`, `predictions.py`, `plots.py`,
   `visualize_data.py`, `visualize_losses.py` (NumPy reimplementation of the SGT loss),
-  `results_figures.py` (`skseq figures losses|grid|lambda-effect|heads|tables|all`: the
-  revision's result figures and tables from `experiment_results.csv`; column/page widths at
-  300 dpi, ≥ 8 pt type, MASE headline; pre-registered SGT anchors `(2,2.5) (1.5,2.5) (2,20)
-  (1,20)` + best-of-grid; Tukey's off-scale values are clipped and annotated).
+  `results_figures.py` (`skseq figures summary|losses|grid|lambda-effect|heads|loss-family|
+  datasets|tukey-curves|tables|all`: the paper's figures and tables from
+  `experiment_results.csv` (+ optional `<dataset>.npy` arrays and an MLflow per-epoch CSV);
+  PDF + 300 dpi PNG, Helvetica Neue, BCa bootstrap 95 % CIs and exact permutation p (`stats.py`), MASE headline; SGT anchors fixed
+  before the sweep `(2,2.5) (1.5,2.5) (2,20) (1,20)` + best-of-grid; Tukey's off-scale values
+  are clipped and annotated).
+- `skewed_sequences/stats.py` — the distribution-free statistics every reported number uses: `bootstrap_ci`
+  (BCa, 10,000 resamples, fixed seed), `signflip_p` (exact two-sided sign-flip permutation test, all 2^n
+  patterns up to n = 16, Monte Carlo beyond) and `holm`. Imported by `results_figures.py` and
+  `aggregate_results.py`; no t or normal approximation is used anywhere in the reported numbers.
 - `skewed_sequences/metrics.py` — skewness / kappa / dispersion / Hill tail-index metrics +
   `fit_sgt` / `sgt_increment_fit` (SGT MLE with `p` and the residual scale fixed as in training).
 - `skewed_sequences/mlflow_contract.py` — single source of the MLflow param/metric key names.
 - `skewed_sequences/data/_common.py` — shared loader helpers (`slice_array_to_chunks`, `scale_and_stack`,
   `check_not_step_function`).
-- `tests/` — one `test_<module>.py` per source module; plain pytest, no `conftest.py` (**242 tests**).
+- `tests/` — one `test_<module>.py` per source module; plain pytest, no `conftest.py` (**281 tests**).
 
 ## How to run
 
@@ -77,7 +84,7 @@ source scripts/mps.sh start && PARTS=7 MAX_ALIVE=6 bash scripts/launch_parallel.
 bash scripts/status_parallel.sh                                                        # progress per slot; --merge collects every store
 STAGES=owid,rvr,lambda,collect nohup poetry run bash scripts/run_sweep.sh > sweep.log 2>&1 &   # resumable sweep
 skseq visualize-losses main
-skseq figures all --input-path reports/experiment_results.csv   # revision figures + tables
+skseq figures all --input-path reports/experiment_results.csv   # paper figures + tables (add --data-dir / --curves-csv for the dataset cards and training curves)
 
 # `visualize` and `plots` have named subcommands (no `main`):
 skseq visualize synthetic        # also: real | variants
@@ -126,7 +133,8 @@ Make targets: `make test` (pytest) · `make lint` (flake8 + isort --check + blac
    literals. Runners draw the per-run seed **once per (run_idx, model_type)** via
    `_runner.draw_experiment_seed` and reuse it across the loss loop, so replicates are
    **seed-paired across loss types** (matched on `random_state`) — this is what makes
-   `aggregate_results`' paired Wilcoxon valid. With `--resume` (the runner default) the seed
+   `aggregate_results`' seed-paired tests valid (`perm_p` from `stats.signflip_p` is the headline,
+   `wilcoxon_p` is kept alongside, intervals are `ci_low` / `ci_high` from `stats.bootstrap_ci`). With `--resume` (the runner default) the seed
    already logged under the experiment name is reused and configs with a FINISHED run are
    skipped, so a killed sweep or an appended sub-sweep (`run-lambda-sweep`) stays paired;
    the match includes the training budget (`num_epochs` / `batch_size` / patience) so a
@@ -284,9 +292,11 @@ living in those dirs — and are additionally blocked from staging by the
 `block_large_secret` hook (regex on `.npy`/`.pt`/`.pth`/…), not by a `.gitignore` glob.
 **Never `git add -f`** these (the hook blocks it). Pre-commit enforces
 `check-added-large-files` (maxkb=10000) and
-`detect-private-key`. `references/` is **untracked by decision** (2026-09-12): it holds
-the reviewed article DOCX, the JupyterHub `mlruns.db` / `sweep.log` copies and the
-analysis CSVs. Stage by explicit path (`git add pyproject.toml CLAUDE.md README.md
+`detect-private-key`. `references/` is **untracked by decision** (2026-09-12) and **gitignored**
+(2026-10-16): it holds the reviewed article DOCX, the manuscript and slide sources, the JupyterHub
+`mlruns.db` / `sweep.log` copies, the Zenodo deposit and the analysis CSVs (about 1 GB; the repo
+is public). Nothing under it is versioned here; the manuscript source needs its own backup
+elsewhere. Stage by explicit path (`git add pyproject.toml CLAUDE.md README.md
 scripts skewed_sequences tests .claude …`) — never `git add -A` / `-u` / `.`: the
 `block_large_secret` hook treats those as a whole-tree scan and refuses on the gitignored
 artifacts under `references/`. Package version lives under **`[tool.poetry]`** in
