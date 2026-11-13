@@ -41,6 +41,11 @@ class TestKappa:
         # so kappa = 2 - log(n)/log(n^{1/2}) ≈ 0
         assert abs(k) < 0.5
 
+    def test_resample_is_seeded(self):
+        x = np.random.default_rng(1).standard_t(3, size=5_000)
+        assert kappa(x, n=10) == kappa(x, n=10)
+        assert kappa(x, n=10, seed=1) != kappa(x, n=10, seed=2)
+
 
 class TestSkewness:
     def test_symmetric_near_zero(self):

@@ -7,7 +7,8 @@ has to be typed by hand:
 * ``summary``  — the headline figure: seed-paired change in test MASE of the two
   tail-tolerant SGT anchors against MSE and against the best classical loss, per dataset.
 * ``losses``   — mean test metric per loss with 95 % bootstrap CIs (classical baselines + the
-  SGT anchors fixed before the sweep + the best-of-grid SGT), one panel per dataset.
+  SGT anchors, fixed on 12 Sep 2026 after the synthetic and head-study runs and before the
+  real-data runs, + the best-of-grid SGT), one panel per dataset.
 * ``grid``     — the SGT ``p x q`` landscape (mean test metric) as annotated heat maps.
 * ``lambda-effect`` — seed-paired effect of the skew parameter vs the symmetric twin.
 * ``heads``    — the fixed-width multi-head study (mean per head count, all losses).
@@ -17,8 +18,10 @@ has to be typed by hand:
   one-step increments with the fitted SGT density (needs the ``.npy`` arrays).
 * ``tukey-curves`` — per-epoch training error on the sparse series (needs the
   per-epoch metrics exported from MLflow).
-* ``tables``   — the main results table, the summary table, the lambda table and the
-  Holm-adjusted anchor-versus-baseline table as Markdown + CSV.
+* ``tables``   — the main results table, the summary table, the lambda table, the
+  Holm-adjusted anchor-versus-baseline table and, when the naive RMSE was logged, the
+  RMSSE table of the paper's appendix (anchors vs MSE under the squared scaled error and
+  the Spearman agreement of the MASE and RMSSE rankings) as Markdown + CSV.
 * ``all``      — everything above for which the inputs exist.
 
 Figures are sized for a 7.0 in text width (3.35 in for a single column) and written as
@@ -43,6 +46,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from scipy.stats import kurtosis as _kurtosis  # noqa: E402
 from scipy.stats import norm as _norm  # noqa: E402
+from scipy.stats import spearmanr  # noqa: E402
 from scipy.stats import wilcoxon  # noqa: E402
 import typer  # noqa: E402
 
@@ -56,6 +60,7 @@ DEFAULT_OUTPUT = FIGURES_DIR / "results"
 METRIC = "best_test_mase"
 METRIC_LABEL = {
     "best_test_mase": "Test MASE",
+    "best_test_rmsse": "Test RMSSE",
     "best_test_rmse": "Test RMSE",
     "best_test_mae": "Test MAE",
     "best_test_smape": "Test sMAPE (%)",
@@ -83,7 +88,10 @@ CLASSICAL_LABEL = {
     "charbonnier": "Charbonnier",
     "tukey": "Tukey",
 }
-# SGT anchors (p, q, lambda) fixed before the sweep — no selection bias.
+# SGT anchors (p, q, lambda): the two tail-tolerant anchors (primary first) and the MSE-like and
+# MAE-like ones. Written here on 12 Sep 2026 (commit 29d1ceb) after the synthetic and head-study
+# runs had been inspected and before any real-data or fine-grid run: pre-specified on the real
+# series only, which the paper states.
 ANCHORS = [(2.0, 2.5, 0.0), (1.5, 2.5, 0.0), (2.0, 20.0, 0.0), (1.0, 20.0, 0.0)]
 HEAD_DATASET = "head-heavy-tailed"
 
@@ -170,6 +178,9 @@ def load_results(path: Path) -> pd.DataFrame:
     df = df[~df["dataset"].str.contains("INVALID", na=False)]
     for col in ("sgt_loss_p", "sgt_loss_q", "sgt_loss_lambda"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
+    if {"best_test_rmse", "best_test_naive_rmse"} <= set(df.columns):
+        # root mean squared scaled error: the squared-error twin of MASE (naive = persistence)
+        df["best_test_rmsse"] = df["best_test_rmse"] / df["best_test_naive_rmse"]
     return df
 
 
@@ -266,7 +277,9 @@ def loss_rows(d: pd.DataFrame, metric: str) -> pd.DataFrame:
         rows.append(
             dict(
                 key="sgt_best",
-                label=f"SGT, best of grid {sgt_label(*best)[4:]}",
+                # no configuration in the label: the panels of a row share the y axis, and the
+                # best cell differs per dataset (the results table names it)
+                label="SGT, best of grid",
                 family="sgt",
                 mean=s.mean(),
                 ci_low=lo,
@@ -398,13 +411,14 @@ def figure_summary(df: pd.DataFrame, metric: str, out: Path) -> Path:
     axes[0].set_yticks([ypos[d] for d in datasets])
     axes[0].set_yticklabels([DATASET_LABEL[d] for d in datasets])
     axes[0].invert_yaxis()
-    axes[0].annotate(
+    axes[0].annotate(  # top-right corner, on the title's baseline, clear of the left-aligned title
         "lower is better for SGT",
-        (0, 1.0),
-        xycoords=("data", "axes fraction"),
-        xytext=(-4, 3),
+        (1.0, 1.0),
+        xycoords="axes fraction",
+        xytext=(0, 6),
         textcoords="offset points",
         ha="right",
+        va="baseline",
         fontsize=6.6,
         color=COLOR_MUTED,
     )
@@ -747,8 +761,12 @@ def figure_heads(df: pd.DataFrame, metric: str, out: Path) -> Path:
             lw=0.8,
             alpha=0.5,
         )
-    agg = h.groupby("num_heads")[metric].agg(["mean"]).reindex(heads)
-    bounds = h.groupby("num_heads")[metric].apply(_ci).reindex(heads)
+    # The ten losses share each seed, so the 100 (loss, seed) runs per head count are ten
+    # independent blocks, not a hundred: the interval is bootstrapped over the ten seed means
+    # (each seed's mean over the losses), the unit the paired tests below use as well.
+    seed_means = h.groupby(["num_heads", "random_state"])[metric].mean()
+    agg = seed_means.groupby(level="num_heads").agg(["mean"]).reindex(heads)
+    bounds = seed_means.groupby(level="num_heads").apply(_ci).reindex(heads)
     agg["ci_low"] = [b[0] for b in bounds]
     agg["ci_high"] = [b[1] for b in bounds]
     ax.fill_between(
@@ -790,7 +808,7 @@ def figure_heads(df: pd.DataFrame, metric: str, out: Path) -> Path:
             marker="o",
             lw=1.6,
             ms=4,
-            label="All losses, mean, 95 % bootstrap CI",
+            label="All losses, mean, 95 % bootstrap CI over seed means",
         ),
         plt.Line2D([], [], color=COLOR_SGT, lw=0.8, alpha=0.7, label="SGT configurations"),
         plt.Line2D([], [], color=COLOR_CLASSICAL, lw=0.8, alpha=0.7, label="Classical losses"),
@@ -883,9 +901,10 @@ def figure_datasets(data_dir: Path, out: Path, datasets=None, ncols: int = 4) ->
         ax_h.grid(False)
         ax_h.set_xlabel("one-step increment / ŝ", fontsize=6.4, color=COLOR_MUTED, labelpad=1)
         ax_h.set_ylabel("density", fontsize=6.4, color=COLOR_MUTED, labelpad=2)
+        lam_hat = 0.0 if abs(st["lam"]) < 0.005 else st["lam"]  # no "-0.00" label
         info = (
             f"kurtosis {st['kurtosis']:.0f}, Hill α {st['hill']:.1f}\n"
-            f"fit: λ̂ = {st['lam']:.2f}, q̂ = {st['q']:.2f}"
+            f"fit: λ̂ = {lam_hat:.2f}, q̂ = {st['q']:.2f}"
         )
         ax_s.set_title(DATASET_LABEL.get(ds, ds), loc="left", fontsize=8, pad=22)
         ax_s.annotate(
@@ -1171,6 +1190,122 @@ def holm_table(df: pd.DataFrame, metric: str, anchors=None) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
+def rmsse_table(
+    df: pd.DataFrame,
+    abs_metric: str = "best_test_mase",
+    sq_metric: str = "best_test_rmsse",
+    anchors=None,
+) -> pd.DataFrame:
+    """The headline comparisons under the squared scaled error (the paper's Appendix B): per
+    dataset the mean RMSSE of the MSE, of the two tail-tolerant anchors and of the best classical
+    loss, each anchor's seed-paired relative difference to the MSE with the exact permutation p,
+    and the Spearman correlation between the MASE and the RMSSE means of every loss
+    configuration (how far the two errors agree on the ranking)."""
+    anchors = anchors or ANCHORS[:2]
+    rows = []
+    for ds in SYNTHETIC + REAL:
+        d = df[df.dataset == ds]
+        if d.empty or sq_metric not in d.columns:
+            continue
+        mse = d[d.loss_type == "mse"]
+        cls = d[d.loss_type != "sgt"].groupby("loss_type")[sq_metric].mean()
+        cfg = d.groupby(
+            ["loss_type", "sgt_loss_p", "sgt_loss_q", "sgt_loss_lambda"], dropna=False
+        )[[abs_metric, sq_metric]].mean()
+        rho = spearmanr(cfg[abs_metric], cfg[sq_metric]).correlation if len(cfg) > 2 else np.nan
+        row = dict(
+            dataset=ds,
+            mse=mse[sq_metric].mean(),
+            best_classical=CLASSICAL_LABEL[cls.idxmin()],
+            best_classical_mean=cls.min(),
+            spearman=float(rho),
+            n_configs=len(cfg),
+        )
+        for p, q, lam in anchors:
+            a = _sel_sgt(d, p, q, lam)
+            r = paired_diff(a, mse, sq_metric)
+            key = sgt_label(p, q, lam)
+            row[f"{key} mean"] = a[sq_metric].mean()
+            row[f"{key} vs MSE (%)"] = 100 * r.mean / row["mse"]
+            row[f"{key} vs MSE p"] = r.p
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def seed_diff_table(
+    df: pd.DataFrame, metric: str = METRIC, datasets=None, anchors=None, baseline: str = "mse"
+) -> pd.DataFrame:
+    """The ten seed-paired differences (anchor minus baseline) behind a comparison, sorted, one
+    row per dataset and anchor: the raw material of the sign-flip test, so that a reader can see
+    whether a mean difference is carried by one or two seeds. Real datasets by default."""
+    datasets = datasets or REAL
+    anchors = anchors or ANCHORS[:2]
+    rows = []
+    for ds in datasets:
+        d = df[df.dataset == ds]
+        b = d[d.loss_type == baseline]
+        if d.empty or b.empty:
+            continue
+        y = b.groupby("random_state")[metric].mean()
+        for p, q, lam in anchors:
+            a = _sel_sgt(d, p, q, lam)
+            if a.empty:
+                continue
+            x = a.groupby("random_state")[metric].mean()
+            idx = x.index.intersection(y.index)
+            diff = (x.loc[idx] - y.loc[idx]).sort_values()
+            rows.append(
+                dict(
+                    dataset=ds,
+                    anchor=sgt_label(p, q, lam),
+                    baseline=CLASSICAL_LABEL[baseline],
+                    n=len(diff),
+                    n_negative=int((diff < 0).sum()),
+                    mean=float(diff.mean()),
+                    median=float(diff.median()),
+                    differences=", ".join(f"{v:+.3f}" for v in diff),
+                )
+            )
+    return pd.DataFrame(rows)
+
+
+def pooled_anchor_test(
+    df: pd.DataFrame, metric: str = METRIC, datasets=None, anchor=None, baseline: str = "mse"
+) -> dict:
+    """One sign-flip test of an anchor against a baseline pooled over several datasets: the
+    seed-paired differences of every dataset, each divided by the baseline's mean on that
+    dataset, are stacked and tested together (Monte Carlo beyond 16 pairs), with the
+    per-dataset means alongside. Exploratory: it was not pre-specified. Default: the primary
+    anchor against the MSE over the five datasets with heavy-tailed increments."""
+    datasets = datasets or [d for d in SYNTHETIC + REAL if d not in ("normal", "normal-skewed")]
+    anchor = anchor or ANCHORS[0]
+    rel, per = [], {}
+    for ds in datasets:
+        d = df[df.dataset == ds]
+        a, b = _sel_sgt(d, *anchor), d[d.loss_type == baseline]
+        if a.empty or b.empty:
+            continue
+        x = a.groupby("random_state")[metric].mean()
+        y = b.groupby("random_state")[metric].mean()
+        idx = x.index.intersection(y.index)
+        r = ((x.loc[idx] - y.loc[idx]) / y.mean()).to_numpy()
+        rel.append(r)
+        per[ds] = float(r.mean())
+    if not rel:
+        return dict(n=0, mean_rel=np.nan, ci_low=np.nan, ci_high=np.nan, p=np.nan, per_dataset=per)
+    allr = np.concatenate(rel)
+    lo, hi = bootstrap_ci(allr)
+    return dict(
+        n=int(allr.size),
+        mean_rel=float(allr.mean()),
+        ci_low=lo,
+        ci_high=hi,
+        p=signflip_p(allr),
+        n_negative=int((allr < 0).sum()),
+        per_dataset=per,
+    )
+
+
 def _to_markdown(t: pd.DataFrame, index: bool = True) -> str:
     cols = ([t.index.name or ""] if index else []) + [str(c) for c in t.columns]
     lines = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
@@ -1291,6 +1426,32 @@ def tables(
         + "\n## Anchors vs baselines with raw permutation p < 0.05, Holm within dataset\n\n"
         + _to_markdown((hol[hol.perm_p < 0.05] if not hol.empty else hol).round(4), index=False)
     )
+    sd = seed_diff_table(df, metric)
+    if not sd.empty:
+        sd.round(4).to_csv(output_dir / f"table_seed_differences_{metric}.csv", index=False)
+        md += (
+            "\n## The seed-paired differences behind the real-data anchor-vs-MSE comparisons\n\n"
+            + _to_markdown(sd.round(4), index=False)
+        )
+    pooled = pooled_anchor_test(df, metric)
+    if pooled["n"]:
+        md += (
+            "\n## Primary anchor vs MSE pooled over the heavy-tailed datasets (exploratory)\n\n"
+            f"n = {pooled['n']} seed-paired relative differences; mean {100 * pooled['mean_rel']:+.2f} %"
+            f" [{100 * pooled['ci_low']:+.2f}, {100 * pooled['ci_high']:+.2f}];"
+            f" sign-flip p = {pooled['p']:.4f}; negative on {pooled['n_negative']} of {pooled['n']};"
+            " per dataset: "
+            + ", ".join(f"{k} {100 * v:+.2f} %" for k, v in pooled["per_dataset"].items())
+            + "\n"
+        )
+    if "best_test_rmsse" in df.columns:
+        rm = rmsse_table(df, abs_metric=metric)
+        rm.round(4).to_csv(output_dir / "table_rmsse.csv", index=False)
+        md += (
+            "\n## Squared scaled error (RMSSE): anchors vs MSE (seed-paired, exact permutation p)"
+            " and Spearman agreement of the MASE and RMSSE rankings\n\n"
+            + _to_markdown(rm.round(4), index=False)
+        )
     (output_dir / f"tables_{metric}.md").write_text(md)
     typer.echo(md)
     logger.success(f"tables written to {output_dir}")

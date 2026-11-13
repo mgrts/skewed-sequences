@@ -113,7 +113,8 @@ SYNTHETIC_DATA_CONFIGS = [
 # The grid demonstrates interpolation between classical losses:
 #   SGT(p=2, q=20)  ≈ MSE        SGT(p=1, q=20)   ≈ MAE
 #   SGT(p=2, q=2.5) ≈ Cauchy     SGT(p=1.5, q=20) ≈ between MAE and MSE
-#   SGT(p=2, q=1.3) ≈ Tukey      (very slow log-growth approximates bounded tails)
+#   SGT(p=2, q=1.3): the heaviest admissible tail at p=2 (a t with 3.4 dof); its gradient
+#   decays like 1/|e| but never vanishes, so it is not a redescending (Tukey-like) loss
 #
 # Constraint: q^p > 2/p required for B3 to be defined.
 # For q=1.3, p=1.0 is invalid (1.3 < 2.0), so only p={1.5, 2.0} are used.
@@ -131,7 +132,7 @@ def _sgt_config(p, q, s, lam=0.0):
 
 
 TRAINING_CONFIGS = [
-    # --- q=1.3: Tukey-like regime (very slow log growth in tails) ---
+    # --- q=1.3: heaviest-tailed regime (slow logarithmic growth in the tails) ---
     # NOTE: p=1.0 is invalid here (q^p=1.3 < 2/p=2, so B3 is undefined).
     _sgt_config(p=2.0, q=1.3, s=1.0),
     _sgt_config(p=1.5, q=1.3, s=1.0),

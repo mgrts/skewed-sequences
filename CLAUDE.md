@@ -49,8 +49,11 @@ Everything is driven through a single `skseq` Typer CLI.
   `results_figures.py` (`skseq figures summary|losses|grid|lambda-effect|heads|loss-family|
   datasets|tukey-curves|tables|all`: the paper's figures and tables from
   `experiment_results.csv` (+ optional `<dataset>.npy` arrays and an MLflow per-epoch CSV);
-  PDF + 300 dpi PNG, Helvetica Neue, BCa bootstrap 95 % CIs and exact permutation p (`stats.py`), MASE headline; SGT anchors fixed
-  before the sweep `(2,2.5) (1.5,2.5) (2,20) (1,20)` + best-of-grid; Tukey's off-scale values
+  PDF + 300 dpi PNG, Helvetica Neue, BCa bootstrap 95 % CIs and exact permutation p (`stats.py`), MASE headline; SGT anchors
+  `(2,2.5) (1.5,2.5) (2,20) (1,20)` (written 12 Sep 2026 after the synthetic and head-study runs,
+  before the real-data runs; pre-specified on the real series only) + best-of-grid; `tables` also
+  writes the RMSSE table (`best_test_rmse / best_test_naive_rmse`) when the naive RMSE is logged, the
+  per-seed differences behind the real-data anchor-vs-MSE tests and an exploratory pooled sign-flip test; Tukey's off-scale values
   are clipped and annotated).
 - `skewed_sequences/stats.py` — the distribution-free statistics every reported number uses: `bootstrap_ci`
   (BCa, 10,000 resamples, fixed seed), `signflip_p` (exact two-sided sign-flip permutation test, all 2^n
@@ -61,7 +64,7 @@ Everything is driven through a single `skseq` Typer CLI.
 - `skewed_sequences/mlflow_contract.py` — single source of the MLflow param/metric key names.
 - `skewed_sequences/data/_common.py` — shared loader helpers (`slice_array_to_chunks`, `scale_and_stack`,
   `check_not_step_function`).
-- `tests/` — one `test_<module>.py` per source module; plain pytest, no `conftest.py` (**281 tests**).
+- `tests/` — one `test_<module>.py` per source module; plain pytest, no `conftest.py` (**284 tests**).
 
 ## How to run
 

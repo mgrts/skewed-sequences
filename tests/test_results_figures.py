@@ -23,6 +23,9 @@ def _rows(dataset, loss, p, q, lam, base, seed_offset=0.0, extra=None):
                 "status": "FINISHED",
                 "best_test_mase": base + 0.01 * run + seed_offset,
                 "best_test_smape": 10 * (base + 0.01 * run),
+                # squared-error twins: RMSSE = rmse / naive_rmse tracks MASE in the fixture
+                "best_test_rmse": 1.3 * (base + 0.01 * run + seed_offset),
+                "best_test_naive_rmse": 1.0,
                 **(extra or {}),
             }
         )
@@ -191,6 +194,35 @@ def test_holm_table_adjusts_within_dataset(results_csv):
     assert rf.holm_table(df[df.loss_type != "sgt"], "best_test_mase").empty
 
 
+def test_rmsse_table(results_csv):
+    df = rf.load_results(results_csv)
+    assert np.allclose(df.best_test_rmsse, df.best_test_rmse / df.best_test_naive_rmse)
+    t = rf.rmsse_table(df)
+    assert list(t.dataset) == ["normal", "heavy-tailed", "covid-owid"]
+    assert {"mse", "best_classical", "spearman", "SGT (p=2, q=2.5) vs MSE (%)"} <= set(t.columns)
+    # RMSSE is a constant multiple of MASE in the fixture: identical rankings, same sign
+    assert t.spearman.to_numpy() == pytest.approx(1.0)
+    assert (t["SGT (p=2, q=2.5) vs MSE (%)"] < 0).all()
+    assert (t["SGT (p=2, q=2.5) vs MSE p"] <= 1).all()
+    # without the naive RMSE there is no RMSSE column and the table is empty, not an error
+    bare = df.drop(columns=["best_test_rmsse"])
+    assert rf.rmsse_table(bare).empty
+
+
+def test_seed_diff_table_and_pooled_test(results_csv):
+    df = rf.load_results(results_csv)
+    t = rf.seed_diff_table(df)  # real datasets only by default: the fixture has one
+    assert list(t.dataset.unique()) == ["covid-owid"]
+    assert set(t.anchor) == {"SGT (p=2, q=2.5)", "SGT (p=1.5, q=2.5)"}
+    assert (t.n == 4).all() and (t.n_negative == 4).all()  # anchors below MSE on every seed
+    assert t.differences.str.count(",").eq(3).all()  # four sorted values per row
+    pooled = rf.pooled_anchor_test(df)
+    assert pooled["n"] == 8 and set(pooled["per_dataset"]) == {"heavy-tailed", "covid-owid"}
+    assert pooled["mean_rel"] < 0 and 0 <= pooled["p"] <= 1
+    assert pooled["ci_low"] <= pooled["mean_rel"] <= pooled["ci_high"]
+    assert rf.pooled_anchor_test(df[df.loss_type != "sgt"])["n"] == 0
+
+
 def test_all_figures_render(results_csv, data_dir, curves_csv, tmp_path):
     out = tmp_path / "figs"
     rf.all_figures(results_csv, out, "best_test_mase", data_dir=data_dir, curves_csv=curves_csv)
@@ -211,6 +243,8 @@ def test_all_figures_render(results_csv, data_dir, curves_csv, tmp_path):
         "table_summary_best_test_mase.csv",
         "table_holm_best_test_mase.csv",
         "table_lambda_best_test_mase.csv",
+        "table_rmsse.csv",
+        "table_seed_differences_best_test_mase.csv",
     }
     names = {p.name for p in out.iterdir()}
     assert expected <= names

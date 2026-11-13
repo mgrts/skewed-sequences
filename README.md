@@ -75,7 +75,7 @@ LANL earthquakes, RVR US hospitalisations, Health & Fitness wearable data).
 │       ├── calculate_metrics.py
 │       └── calculate_dispersion_scaling.py
 │
-├── tests/                  <- Pytest test suite (281 tests)
+├── tests/                  <- Pytest test suite (284 tests)
 ├── data/                   <- Raw / interim / processed / external data
 ├── models/                 <- Saved model artefacts
 ├── mlruns/                 <- MLflow tracking store
@@ -231,8 +231,9 @@ poetry run skseq figures all --input-path reports/experiment_results.csv
 
 Result figures (the headline anchors-vs-baselines summary, per-loss means with BCa bootstrap
 95 % CIs, the SGT p × q landscape, the skew-parameter effect, the multi-head study, the
-loss/gradient family) and the results / summary / λ / Holm tables, from the collected CSV; as PDF
-and PNG. Every p-value is an exact sign-flip permutation test on the seed-paired differences
+loss/gradient family) and the results / summary / λ / Holm tables, plus the RMSSE table, the per-seed
+differences behind the real-data anchor-vs-MSE tests and an exploratory pooled sign-flip test, from the
+collected CSV; as PDF and PNG. Every p-value is an exact sign-flip permutation test on the seed-paired differences
 (the paired Wilcoxon p is kept alongside); see `skewed_sequences/stats.py`. `--data-dir <dir>` (with `<dataset>.npy` arrays) adds the dataset cards and
 `--curves-csv <file>` (per-epoch MLflow metrics) adds the Tukey training curves; both are
 also available as `skseq figures datasets` / `skseq figures tukey-curves`.
@@ -385,7 +386,7 @@ make pre-commit  # Run all pre-commit hooks
 
 ### Testing
 
-The test suite (281 tests) lives in `tests/`:
+The test suite (284 tests) lives in `tests/`:
 
 | Module | What it tests |
 |--------|---------------|

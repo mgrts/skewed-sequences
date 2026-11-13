@@ -6,26 +6,29 @@ def mean_abs_deviation(x: np.ndarray) -> float:
     return np.mean(np.abs(x - np.mean(x)))
 
 
-def generate_n_sample(x: np.ndarray, n: int) -> np.ndarray:
+def generate_n_sample(x: np.ndarray, n: int, seed: int = 0) -> np.ndarray:
+    """Sum of ``n`` bootstrap resamples of ``x`` (the S_n of Taleb's kappa), drawn from a
+    generator seeded with ``seed`` so that a reported kappa is reproducible."""
     x = np.asarray(x)
     sample_size = len(x)
 
     # Generate a (n, sample_size) matrix of resampled indices
-    resampled_indices = np.random.randint(0, sample_size, size=(n, sample_size))
+    rng = np.random.default_rng(seed)
+    resampled_indices = rng.integers(0, sample_size, size=(n, sample_size))
     resampled_samples = x[resampled_indices]
 
     # Sum across the n samples
     return np.sum(resampled_samples, axis=0)
 
 
-def kappa(x: np.ndarray, n: int) -> float:
+def kappa(x: np.ndarray, n: int, seed: int = 0) -> float:
     """Single-shot kappa exponent: ``2 - log(n) / log(M_n / M_1)``.
 
     Thin wrapper over :func:`estimate_kappa_exponent` (the single source of the
     M_1 / M_n / K computation) that raises instead of returning NaN on degenerate
     (constant / non-increasing-MAD) inputs.
     """
-    _, _, k_1n, m1, mn = estimate_kappa_exponent(np.asarray(x), n)
+    _, _, k_1n, m1, mn = estimate_kappa_exponent(np.asarray(x), n, seed=seed)
     if not np.isfinite(k_1n):
         raise ValueError(
             f"MAD of sample is degenerate (M_1={m1}, M_n={mn}); log ratio is undefined."
@@ -33,12 +36,12 @@ def kappa(x: np.ndarray, n: int) -> float:
     return k_1n
 
 
-def estimate_kappa_exponent(X: np.ndarray, n: int):
+def estimate_kappa_exponent(X: np.ndarray, n: int, seed: int = 0):
     if n <= 1:
         raise ValueError("n must be greater than 1")
 
     S_1 = X
-    S_n = generate_n_sample(X, n)
+    S_n = generate_n_sample(X, n, seed=seed)
 
     M_1 = mean_abs_deviation(S_1)
     M_n = mean_abs_deviation(S_n)
